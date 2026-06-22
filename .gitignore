@@ -1,0 +1,47 @@
+# Claude Code local settings (не должны попадать в репозиторий)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Логи и временные файлы
+*.log
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Кэш моделей и временные медиафайлы бота
+.cache/
+models/
+tmp/
+*.ogg
+*.oga
+*.mp3
+*.wav
+*.m4a
+
+# Секреты окружения — в репозиторий попадает только *.env.example (см. deploy-guide.md)
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
