@@ -45,7 +45,7 @@ Textify/
   .env.example          # шаблон переменных
 ```
 
-> Код ещё не написан — это план первой итерации. Документация workflow и артефакты (`adrs/`, `ba-req/`, `releases/` и т.д.) унаследованы от AMS-шаблона разработки.
+> Структура актуальна начиная с v0.3.0. Документация workflow и артефакты (`adrs/`, `ba-req/`, `releases/` и т.д.) описаны в [`CLAUDE.md`](./CLAUDE.md).
 
 ## Окружение
 
@@ -53,10 +53,10 @@ Textify/
 
 ```bash
 sudo apt update
-sudo apt install -y ffmpeg tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng
+sudo apt install -y tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng
 ```
 
-`ffmpeg` нужен для декодирования аудио из Telegram (`.oga`/`.ogg`), Tesseract — для OCR.
+Tesseract — для OCR. Декодирование аудио идёт через пакет `av` (транзитивная зависимость faster-whisper), системный `ffmpeg` не требуется.
 
 ### Python
 
