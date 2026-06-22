@@ -1,8 +1,9 @@
-# Production CD — Textify (ivahub, 138.16.226.66).
+# Production CD — Textify (ivahub, 138.16.226.66:2222).
 # Контракт поставки — см. deploy-guide.md (профиль «бот без HTTP-порта», ADR-001).
-# Имя продукта берётся из имени репозитория.
-# Требует секреты репозитория: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DISCORD_WEBHOOK.
-# Адресат деплоя — ivahub (не app-01). Доп. защита: пока нет Dockerfile — джобы пропускаются.
+# Образ публикуется в GHCR (владелец в lowercase — требование GHCR).
+# Сборка идёт всегда; деплой включается переменной репозитория DEPLOY_ENABLED=true
+# и требует секреты: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PORT, DISCORD_WEBHOOK.
+# Адресат деплоя — ivahub (не app-01).
 name: deploy
 
 on:
@@ -15,11 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+  IMAGE: ghcr.io/ivahub84/${{ github.event.repository.name }}
 
 jobs:
   build:
-    if: ${{ hashFiles('Dockerfile') != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,6 +50,7 @@ jobs:
 
   deploy:
     needs: build
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH
@@ -58,6 +59,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
           script: |
             cd /opt/apps/${{ github.event.repository.name }}
             docker compose pull
@@ -66,7 +68,7 @@ jobs:
 
   notify:
     needs: [build, deploy]
-    if: ${{ always() && hashFiles('Dockerfile') != '' }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Notify Discord

@@ -1,5 +1,5 @@
 services:
   bot:
-    image: ghcr.io/ivanov-ebox/textify:latest
+    image: ghcr.io/ivahub84/textify:latest
     restart: unless-stopped
     env_file: .env
