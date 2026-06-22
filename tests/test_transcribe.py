@@ -57,6 +57,24 @@ async def test_transcribe_whitespace_only_segments_returns_stripped():
     assert not result.strip()
 
 
+@pytest.mark.asyncio
+async def test_transcribe_passes_file_like_not_raw_bytes():
+    """Регрессия: faster-whisper/av требует path или file-like с read();
+    голые bytes дают 'File object has no read() method'. Сервис обязан
+    оборачивать байты в file-like объект."""
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = (iter([]), MagicMock())
+
+    with patch("services.transcribe._get_model", return_value=mock_model):
+        import services.transcribe as svc
+        await svc.transcribe(b"\x00\x01raw_audio")
+
+    passed = mock_model.transcribe.call_args.args[0]
+    assert not isinstance(passed, (bytes, bytearray)), "в transcribe ушли сырые bytes"
+    assert hasattr(passed, "read"), "аргумент не файлоподобный (нет read())"
+    assert passed.read() == b"\x00\x01raw_audio"
+
+
 def test_transcribe_uses_singleton_not_direct_instantiation():
     """Т-4: _transcribe_sync получает модель через _get_model(), а не напрямую через WhisperModel.
 

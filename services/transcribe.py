@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from io import BytesIO
 
 from faster_whisper import WhisperModel
 
@@ -18,7 +19,10 @@ def _get_model() -> WhisperModel:
 
 def _transcribe_sync(audio_bytes: bytes) -> str:
     model = _get_model()
-    segments, _ = model.transcribe(audio_bytes)
+    # faster-whisper feeds the input to av.open, which needs a path or a
+    # file-like object with read(); raw bytes raise "File object has no
+    # read() method". Wrap in BytesIO.
+    segments, _ = model.transcribe(BytesIO(audio_bytes))
     return "".join(segment.text for segment in segments).strip()
 
 
