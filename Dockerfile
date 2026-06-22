@@ -12,6 +12,8 @@ RUN apt-get update \
         tesseract-ocr \
         tesseract-ocr-rus \
         tesseract-ocr-eng \
+        libglib2.0-0 \
+        libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --no-create-home --shell /bin/false appuser
@@ -21,6 +23,9 @@ ENV HF_HOME=/opt/models
 WORKDIR /app
 
 COPY --from=builder /install /usr/local
+
+RUN python -c "import cv2"
+
 COPY config.py bot.py ./
 COPY handlers/ ./handlers/
 COPY services/ ./services/
