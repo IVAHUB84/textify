@@ -7,7 +7,11 @@ from services.ocr import recognize_text
 
 router = Router()
 
-NO_TEXT_MESSAGE = "Текст на изображении не распознан."
+NO_TEXT_MESSAGE = (
+    "Текст на изображении не распознан.\n"
+    "Совет: для лучшего качества отправляйте изображение как файл (📎 → Документ), "
+    "а не обычным фото — так Telegram не пережимает его."
+)
 
 
 @router.message(F.photo)
