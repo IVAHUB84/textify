@@ -4,11 +4,17 @@ from aiogram import Bot, Dispatcher
 
 from config import config
 from handlers import audio_router, commands_router, image_router, text_router
+from middlewares import StatsMiddleware
+from services.stats import init_db
 
 
 async def main() -> None:
+    init_db()
+
     bot = Bot(token=config["BOT_TOKEN"])
     dp = Dispatcher()
+
+    dp.message.outer_middleware(StatsMiddleware())
 
     dp.include_router(commands_router)
     dp.include_router(image_router)
