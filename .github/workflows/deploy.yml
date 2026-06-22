@@ -66,10 +66,20 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           envs: GHCR_TOKEN,GHCR_USER
+          # ivahub has a slow/flaky network — image layer pulls can be long.
+          # Give the command a wide window and retry the pull a few times so a
+          # transient stall doesn't fail the whole deploy (the build is already done).
+          command_timeout: 30m
           script: |
+            set -e
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             cd /opt/apps/${{ github.event.repository.name }}
-            docker compose pull
+            for attempt in 1 2 3 4 5; do
+              echo "docker compose pull (attempt $attempt)"
+              if docker compose pull; then break; fi
+              if [ "$attempt" = "5" ]; then echo "pull failed after retries" >&2; exit 1; fi
+              sleep 15
+            done
             docker compose up -d
             docker image prune -f
             docker logout ghcr.io
