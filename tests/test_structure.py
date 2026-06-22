@@ -55,9 +55,11 @@ async def test_structure_text_cloudflare_success():
     assert headers.get("Authorization") == "Bearer tok456"
     body = call_args.kwargs.get("json", {})
     messages = body.get("messages", [])
-    assert len(messages) == 2
+    # system + few-shot (user/assistant) + реальный user
+    assert len(messages) == 4
     assert messages[0]["role"] == "system"
-    assert messages[1]["role"] == "user"
+    assert messages[-1]["role"] == "user"
+    assert "Привет мир" in messages[-1]["content"]
 
 
 @pytest.mark.asyncio
@@ -241,11 +243,11 @@ async def test_structure_text_truncates_long_input_sent_to_provider():
             await svc.structure_text(long_text)
 
     body = mock_post.call_args.kwargs.get("json", {})
-    user_content = next(
-        m["content"] for m in body["messages"] if m["role"] == "user"
-    )
-    assert len(user_content) <= svc._MAX_INPUT_CHARS
-    assert len(user_content) < 10000
+    # реальный ввод — в последнем user-сообщении (первое user — few-shot пример)
+    user_content = [m["content"] for m in body["messages"] if m["role"] == "user"][-1]
+    # усечение до порога: ровно _MAX_INPUT_CHARS символов 'a' попало, на 1 больше — нет
+    assert ("a" * svc._MAX_INPUT_CHARS) in user_content
+    assert ("a" * (svc._MAX_INPUT_CHARS + 1)) not in user_content
 
 
 def test_structure_module_does_not_import_aiogram():
@@ -273,3 +275,37 @@ def test_structure_text_uses_httpx_async_client():
     source = inspect.getsource(svc.structure_text)
     assert "AsyncClient" in source
     assert "to_thread" not in source
+
+
+def test_build_messages_has_fewshot_and_real_input_last():
+    """Сообщения: system + few-shot (user/assistant) + реальный ввод последним."""
+    import services.structure as svc
+    messages = svc._build_messages("мой текст")
+    roles = [m["role"] for m in messages]
+    assert roles == ["system", "user", "assistant", "user"]
+    assert "мой текст" in messages[-1]["content"]
+    # few-shot пример не содержит реального ввода
+    assert "мой текст" not in messages[1]["content"]
+
+
+def test_strip_markers_removes_delimiter_lines():
+    """Если модель повторила служебные маркеры — они срезаются из ответа."""
+    import services.structure as svc
+    raw = f"{svc._BEGIN}\n## Заголовок\n- пункт\n{svc._END}"
+    assert svc._strip_markers(raw) == "## Заголовок\n- пункт"
+
+
+@pytest.mark.asyncio
+async def test_structure_text_strips_leaked_markers():
+    """Маркеры, просочившиеся в result.response, не доходят до пользователя."""
+    env = {"LLM_PROVIDER": "cloudflare", "CF_ACCOUNT_ID": "acc", "CF_API_TOKEN": "tok"}
+    leaked = "<<<НАЧАЛО>>>\n## Итог\n- раз\n- два\n<<<КОНЕЦ>>>"
+    mock_post = AsyncMock(return_value=_make_cf_response(leaked))
+
+    with patch.dict("os.environ", env, clear=False):
+        import services.structure as svc
+        importlib.reload(svc)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await svc.structure_text("сырой текст")
+
+    assert result == "## Итог\n- раз\n- два"
