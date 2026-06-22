@@ -87,6 +87,28 @@ async def test_fallback_does_not_raise():
 
 
 @pytest.mark.asyncio
+async def test_best_of_both_picks_original_when_preprocessed_worse():
+    """Регрессия v0.4.0: на шумных фото предобработка может дать пусто/мусор.
+    Должен вернуться более содержательный кандидат (исходное изображение)."""
+    with patch("services.ocr.preprocess_image", return_value=object()):
+        # порядок вызовов: 1) предобработанное (слабое), 2) исходное (сильное)
+        with patch("pytesseract.image_to_string", side_effect=["", "Hello World 123"]):
+            from services import ocr
+            result = await ocr.recognize_text(_png_bytes())
+            assert result == "Hello World 123"
+
+
+@pytest.mark.asyncio
+async def test_best_of_both_keeps_preprocessed_when_better():
+    """Выигрыш предобработки (например, deskew) сохраняется, если она лучше."""
+    with patch("services.ocr.preprocess_image", return_value=object()):
+        with patch("pytesseract.image_to_string", side_effect=["Hello World 123", "ll Wld"]):
+            from services import ocr
+            result = await ocr.recognize_text(_png_bytes())
+            assert result == "Hello World 123"
+
+
+@pytest.mark.asyncio
 async def test_corrupt_bytes_returns_str_never_raises():
     """recognize_text must return str and not raise on completely invalid image data."""
     from services import ocr
