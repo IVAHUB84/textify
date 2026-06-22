@@ -1,0 +1,5 @@
+services:
+  bot:
+    image: ghcr.io/ivanov-ebox/textify:latest
+    restart: unless-stopped
+    env_file: .env
