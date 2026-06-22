@@ -1,7 +1,7 @@
 import shutil
 
 import pytest
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 pytesseract = pytest.importorskip("pytesseract")
 
