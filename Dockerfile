@@ -16,7 +16,8 @@ RUN apt-get update \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --no-create-home --shell /bin/false appuser
+RUN groupadd --gid 10001 appuser \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /bin/false appuser
 
 ENV HF_HOME=/opt/models
 
@@ -28,7 +29,10 @@ RUN python -c "import cv2"
 
 COPY config.py bot.py ./
 COPY handlers/ ./handlers/
+COPY middlewares/ ./middlewares/
 COPY services/ ./services/
+
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
 
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')" \
     && chmod -R a+rX /opt/models

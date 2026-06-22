@@ -3,6 +3,8 @@ services:
     image: ghcr.io/ivahub84/textify:latest
     restart: unless-stopped
     env_file: .env
+    volumes:
+      - /opt/apps/textify/data:/app/data
     # На ivahub маршрут к части IP Telegram (включая тот, что отдаёт DNS для
     # api.telegram.org) блокируется на сетевом уровне. Пиннинг на достижимый
     # Telegram-DC, чтобы long-polling работал. Если IP перестанет отвечать —
