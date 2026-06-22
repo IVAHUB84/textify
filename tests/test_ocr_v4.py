@@ -14,6 +14,18 @@ def _png_bytes(size=(200, 100), color=(255, 255, 255)) -> bytes:
     return buf.getvalue()
 
 
+def _data(*words, conf=90):
+    """DICT в формате pytesseract.image_to_data: слова на одной строке, заданная conf."""
+    n = len(words)
+    return {
+        "text": list(words),
+        "conf": [conf] * n,
+        "block_num": [1] * n,
+        "par_num": [1] * n,
+        "line_num": [1] * n,
+    }
+
+
 def _tesseract_available() -> bool:
     if shutil.which("tesseract") is None:
         return False
@@ -51,7 +63,7 @@ def test_ocr_module_does_not_import_aiogram():
 @pytest.mark.asyncio
 async def test_oem1_psm3_and_lang_used():
     from services import ocr
-    with patch("pytesseract.image_to_string", return_value="mocked") as mock_ts:
+    with patch("pytesseract.image_to_data", return_value=_data("mocked")) as mock_ts:
         await ocr.recognize_text(_png_bytes())
         assert mock_ts.called
         call_kwargs = mock_ts.call_args
@@ -69,7 +81,9 @@ async def test_oem1_psm3_and_lang_used():
 @pytest.mark.asyncio
 async def test_fallback_on_preprocess_exception():
     with patch("services.ocr.preprocess_image", side_effect=RuntimeError("preprocess boom")):
-        with patch("pytesseract.image_to_string", return_value="fallback result") as mock_ts:
+        with patch(
+            "pytesseract.image_to_data", return_value=_data("fallback", "result")
+        ) as mock_ts:
             from services import ocr
             result = await ocr.recognize_text(_png_bytes())
             assert result == "fallback result", "Should return fallback OCR result"
@@ -79,7 +93,7 @@ async def test_fallback_on_preprocess_exception():
 @pytest.mark.asyncio
 async def test_fallback_does_not_raise():
     with patch("services.ocr.preprocess_image", side_effect=ValueError("bad image")):
-        with patch("pytesseract.image_to_string", return_value=""):
+        with patch("pytesseract.image_to_data", return_value=_data()):
             from services import ocr
             result = await ocr.recognize_text(_png_bytes())
             assert isinstance(result, str)
@@ -91,7 +105,10 @@ async def test_best_of_both_picks_original_when_preprocessed_worse():
     Должен вернуться более содержательный кандидат (исходное изображение)."""
     with patch("services.ocr.preprocess_image", return_value=object()):
         # порядок вызовов: 1) предобработанное (слабое), 2) исходное (сильное)
-        with patch("pytesseract.image_to_string", side_effect=["", "Hello World 123"]):
+        with patch(
+            "pytesseract.image_to_data",
+            side_effect=[_data(), _data("Hello", "World", "123")],
+        ):
             from services import ocr
             result = await ocr.recognize_text(_png_bytes())
             assert result == "Hello World 123"
@@ -101,10 +118,35 @@ async def test_best_of_both_picks_original_when_preprocessed_worse():
 async def test_best_of_both_keeps_preprocessed_when_better():
     """Выигрыш предобработки (например, deskew) сохраняется, если она лучше."""
     with patch("services.ocr.preprocess_image", return_value=object()):
-        with patch("pytesseract.image_to_string", side_effect=["Hello World 123", "ll Wld"]):
+        with patch(
+            "pytesseract.image_to_data",
+            side_effect=[_data("Hello", "World", "123"), _data("ll", "Wld")],
+        ):
             from services import ocr
             result = await ocr.recognize_text(_png_bytes())
             assert result == "Hello World 123"
+
+
+@pytest.mark.asyncio
+async def test_quality_gate_drops_low_confidence_noise():
+    """v0.5.2: слова с низкой уверенностью (мусор по иконкам) отсекаются → пустой результат."""
+    with patch("services.ocr.preprocess_image", side_effect=RuntimeError("skip")):
+        with patch("pytesseract.image_to_data", return_value=_data("Hi", "there", conf=10)):
+            from services import ocr
+            result = await ocr.recognize_text(_png_bytes())
+            assert result == "", f"низкая уверенность должна давать пусто, получили {result!r}"
+
+
+@pytest.mark.asyncio
+async def test_quality_gate_drops_symbol_only_tokens():
+    """v0.5.2: одиночные символы иконок (♥, |, ~) уверенно «читаются», но отсекаются."""
+    with patch("services.ocr.preprocess_image", side_effect=RuntimeError("skip")):
+        with patch(
+            "pytesseract.image_to_data", return_value=_data("♥", "|", "~", "☆", conf=95)
+        ):
+            from services import ocr
+            result = await ocr.recognize_text(_png_bytes())
+            assert result == "", f"символы иконок должны отсекаться, получили {result!r}"
 
 
 @pytest.mark.asyncio
@@ -117,7 +159,7 @@ async def test_corrupt_bytes_returns_str_never_raises():
 
 @pytest.mark.asyncio
 async def test_recognize_text_returns_str():
-    with patch("pytesseract.image_to_string", return_value="hello"):
+    with patch("pytesseract.image_to_data", return_value=_data("hello")):
         from services import ocr
         result = await ocr.recognize_text(_png_bytes())
         assert isinstance(result, str)
