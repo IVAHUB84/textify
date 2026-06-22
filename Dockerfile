@@ -16,12 +16,20 @@ RUN apt-get update \
 
 RUN useradd --no-create-home --shell /bin/false appuser
 
+ENV HF_HOME=/opt/models
+
 WORKDIR /app
 
 COPY --from=builder /install /usr/local
 COPY config.py bot.py ./
 COPY handlers/ ./handlers/
 COPY services/ ./services/
+
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')" \
+    && chmod -R a+rX /opt/models
+
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
 
 USER appuser
 

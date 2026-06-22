@@ -3,7 +3,7 @@ from aiogram import Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from unittest.mock import AsyncMock
 
-from handlers import commands_router, image_router, text_router
+from handlers import audio_router, commands_router, image_router, text_router
 from handlers.commands import START_TEXT, HELP_TEXT
 from handlers.text import STUB_TEXT
 
@@ -13,6 +13,7 @@ def dp() -> Dispatcher:
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher.include_router(commands_router)
     dispatcher.include_router(image_router)
+    dispatcher.include_router(audio_router)
     dispatcher.include_router(text_router)
     return dispatcher
 
@@ -37,6 +38,29 @@ def test_image_router_before_text_router(dp: Dispatcher):
     text_index = sub_routers.index(text_router)
     assert image_index < text_index, (
         f"image_router (позиция {image_index}) должен быть до text_router (позиция {text_index})"
+    )
+
+
+def test_audio_router_registered(dp: Dispatcher):
+    """Т-3: audio_router зарегистрирован в диспетчере."""
+    assert audio_router in dp.sub_routers, "audio_router не подключён"
+
+
+def test_audio_router_before_text_router(dp: Dispatcher):
+    """Т-3: audio_router зарегистрирован до text_router — аудио не перехватит заглушка."""
+    sub_routers = list(dp.sub_routers)
+    audio_index = sub_routers.index(audio_router)
+    text_index = sub_routers.index(text_router)
+    assert audio_index < text_index, (
+        f"audio_router (позиция {audio_index}) должен быть до text_router (позиция {text_index})"
+    )
+
+
+def test_audio_router_has_voice_and_audio_handlers():
+    """Т-3: в audio_router есть хендлеры для voice и audio (минимум 2)."""
+    handlers = list(audio_router.message.handlers)
+    assert len(handlers) >= 2, (
+        f"Ожидали минимум 2 хендлера в audio_router (voice + audio), найдено: {len(handlers)}"
     )
 
 
