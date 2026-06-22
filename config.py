@@ -12,7 +12,9 @@ def load_config() -> dict:
             "BOT_TOKEN не задан или пуст. "
             "Укажите его в переменных окружения или в файле .env."
         )
-    return {"BOT_TOKEN": token}
+    return {
+        "BOT_TOKEN": token,
+    }
 
 
 config = load_config()
