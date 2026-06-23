@@ -10,9 +10,11 @@ import services.result_cache as cache_mod
 def clear_cache():
     cache_mod._cache.clear()
     cache_mod._seg_cache.clear()
+    cache_mod._img_cache.clear()
     yield
     cache_mod._cache.clear()
     cache_mod._seg_cache.clear()
+    cache_mod._img_cache.clear()
 
 
 def _make_sender_mock() -> MagicMock:
@@ -288,7 +290,12 @@ async def test_image_progressive_sends_preview_with_two_buttons():
     kwargs = message.answer.await_args[1]
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert len(buttons) == 4
+    data_values = {btn.callback_data for btn in buttons}
+    assert len(buttons) == 5
+    assert "act:pdf" in data_values
+    # Байты картинки закэшированы под отправленным сообщением — для кнопки PDF.
+    sent_id = message.answer.return_value.message_id
+    assert cache_mod.get_image(_CHAT_ID, sent_id) == b"fake"
 
 
 @pytest.mark.asyncio
@@ -425,5 +432,6 @@ async def test_image_non_progressive_sends_one_button():
     kwargs = message.answer.await_args[1]
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert len(buttons) == 3
+    assert len(buttons) == 4
     assert buttons[0].callback_data == "act:sum"
+    assert "act:pdf" in {btn.callback_data for btn in buttons}

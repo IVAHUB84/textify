@@ -87,3 +87,21 @@ async def recognize_text(image_bytes: bytes) -> str:
     async with HEAVY_LOCAL_SEMAPHORE:
         result: str = await asyncio.to_thread(_run_ocr, image_bytes)
     return result
+
+
+def _run_ocr_pdf(image_bytes: bytes) -> bytes | None:
+    """Searchable PDF: исходное изображение + невидимый текстовый слой от Tesseract."""
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        pdf = pytesseract.image_to_pdf_or_hocr(
+            image, lang=_LANG, config=_CONFIG, extension="pdf"
+        )
+        return bytes(pdf) if pdf else None
+    except Exception:
+        logger.exception("OCR->PDF failed")
+        return None
+
+
+async def recognize_pdf(image_bytes: bytes) -> bytes | None:
+    async with HEAVY_LOCAL_SEMAPHORE:
+        return await asyncio.to_thread(_run_ocr_pdf, image_bytes)

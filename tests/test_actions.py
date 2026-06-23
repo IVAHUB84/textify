@@ -20,9 +20,11 @@ def mock_chat_action_sender():
 def clear_cache():
     cache_mod._cache.clear()
     cache_mod._seg_cache.clear()
+    cache_mod._img_cache.clear()
     yield
     cache_mod._cache.clear()
     cache_mod._seg_cache.clear()
+    cache_mod._img_cache.clear()
 
 
 def _make_callback(message_id: int = 100) -> MagicMock:
@@ -90,15 +92,29 @@ def test_actions_keyboard_extras_buttons_optional():
         assert "act:srt" in data_values
 
 
+def test_actions_keyboard_pdf_button_optional():
+    """with_pdf=True добавляет act:pdf; по умолчанию его нет."""
+    for progressive in (True, False):
+        assert "act:pdf" not in {
+            btn.callback_data for row in actions_keyboard(progressive).inline_keyboard for btn in row
+        }
+        assert "act:pdf" in {
+            btn.callback_data
+            for row in actions_keyboard(progressive, with_pdf=True).inline_keyboard
+            for btn in row
+        }
+
+
 def test_actions_keyboard_callback_data_within_64_bytes():
     """callback_data кнопок ≤ 64 байт во всех режимах."""
     for progressive in (True, False):
         for with_extras in (True, False):
-            kb = actions_keyboard(progressive, with_extras=with_extras)
-            for row in kb.inline_keyboard:
-                for btn in row:
-                    assert btn.callback_data is not None
-                    assert len(btn.callback_data.encode("utf-8")) <= 64
+            for with_pdf in (True, False):
+                kb = actions_keyboard(progressive, with_extras=with_extras, with_pdf=with_pdf)
+                for row in kb.inline_keyboard:
+                    for btn in row:
+                        assert btn.callback_data is not None
+                        assert len(btn.callback_data.encode("utf-8")) <= 64
 
 
 def test_actions_keyboard_default_is_non_progressive():
@@ -512,3 +528,59 @@ async def test_handle_srt_cache_miss_alert():
     calls = callback.answer.await_args_list
     alert_calls = [c for c in calls if c[1].get("show_alert") is True]
     assert len(alert_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# act:pdf — searchable PDF из закэшированного изображения
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_pdf_cache_hit_sends_document():
+    """act:pdf при наличии картинки → recognize_pdf + answer_document(.pdf)."""
+    from handlers.actions import handle_pdf
+
+    callback = _make_callback(message_id=820)
+    callback.message.answer_document = AsyncMock()
+    cache_mod.put_image(12345, 820, b"img-bytes")
+
+    with patch("handlers.actions.recognize_pdf", new=AsyncMock(return_value=b"%PDF-1.4 ...")) as mock_pdf:
+        await handle_pdf(callback)
+
+    mock_pdf.assert_awaited_once_with(b"img-bytes")
+    callback.message.answer_document.assert_awaited_once()
+    doc = callback.message.answer_document.await_args[0][0]
+    assert doc.filename.endswith(".pdf")
+
+
+@pytest.mark.asyncio
+async def test_handle_pdf_cache_miss_alert():
+    """act:pdf при отсутствии картинки → alert, recognize_pdf не вызывается."""
+    from handlers.actions import handle_pdf
+
+    callback = _make_callback(message_id=821)
+    callback.message.answer_document = AsyncMock()
+
+    with patch("handlers.actions.recognize_pdf", new=AsyncMock()) as mock_pdf:
+        await handle_pdf(callback)
+
+    mock_pdf.assert_not_awaited()
+    callback.message.answer_document.assert_not_awaited()
+    alert_calls = [c for c in callback.answer.await_args_list if c[1].get("show_alert") is True]
+    assert len(alert_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_handle_pdf_recognize_returns_none_sends_service_message():
+    """act:pdf при сбое recognize_pdf (None) → текстовое сообщение, без документа."""
+    from handlers.actions import handle_pdf
+
+    callback = _make_callback(message_id=822)
+    callback.message.answer_document = AsyncMock()
+    cache_mod.put_image(12345, 822, b"img")
+
+    with patch("handlers.actions.recognize_pdf", new=AsyncMock(return_value=None)):
+        await handle_pdf(callback)
+
+    callback.message.answer_document.assert_not_awaited()
+    callback.message.answer.assert_awaited_once()

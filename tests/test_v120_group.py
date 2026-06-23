@@ -774,8 +774,9 @@ async def test_group_result_has_actions_keyboard():
     assert markup is not None
     assert isinstance(markup, InlineKeyboardMarkup)
     buttons = [btn for row in markup.inline_keyboard for btn in row]
-    assert len(buttons) == 3
+    assert len(buttons) == 4
     assert buttons[0].callback_data == "act:sum"
+    assert "act:pdf" in {btn.callback_data for btn in buttons}
 
 
 @pytest.mark.asyncio

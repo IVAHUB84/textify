@@ -62,3 +62,34 @@ async def test_ocr_empty_result_on_blank_image():
     result = await recognize_text(image_bytes)
     assert isinstance(result, str), "recognize_text должна возвращать str"
     assert not result.strip(), f"Ожидали пустой результат, получили: {result!r}"
+
+
+@pytest.mark.asyncio
+async def test_recognize_pdf_returns_bytes(monkeypatch):
+    """recognize_pdf отдаёт байты PDF от pytesseract (мок, без бинаря tesseract)."""
+    from unittest.mock import MagicMock
+
+    import services.ocr as ocr
+
+    fake = MagicMock(return_value=b"%PDF-1.4 fake")
+    monkeypatch.setattr(ocr.pytesseract, "image_to_pdf_or_hocr", fake)
+
+    result = await ocr.recognize_pdf(_make_image_with_text("hi"))
+
+    assert result == b"%PDF-1.4 fake"
+    assert fake.call_args.kwargs.get("extension") == "pdf"
+
+
+@pytest.mark.asyncio
+async def test_recognize_pdf_returns_none_on_error(monkeypatch):
+    """Сбой Tesseract → recognize_pdf возвращает None, исключение не пробрасывается."""
+    from unittest.mock import MagicMock
+
+    import services.ocr as ocr
+
+    boom = MagicMock(side_effect=RuntimeError("tess failed"))
+    monkeypatch.setattr(ocr.pytesseract, "image_to_pdf_or_hocr", boom)
+
+    result = await ocr.recognize_pdf(_make_image_with_text("hi"))
+
+    assert result is None

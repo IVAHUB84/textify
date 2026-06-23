@@ -40,7 +40,8 @@ async def process_photo(
     buffer = BytesIO()
     await bot.download(photo, destination=buffer)
     async with ChatActionSender(bot=bot, chat_id=reply_target.chat.id, action=ChatAction.UPLOAD_DOCUMENT):
-        text = await recognize_text(buffer.getvalue())
+        image_bytes = buffer.getvalue()
+        text = await recognize_text(image_bytes)
         if not text.strip():
             await reply_target.answer(NO_TEXT_MESSAGE)
             return
@@ -53,13 +54,19 @@ async def process_photo(
                 preview = _GIST_BUDGET_PREVIEW
             else:
                 preview = _GIST_FAIL_PREVIEW
-            sent: Message = await reply_target.answer(preview, reply_markup=actions_keyboard(progressive=True))
+            sent: Message = await reply_target.answer(
+                preview, reply_markup=actions_keyboard(progressive=True, with_pdf=True)
+            )
             result_cache.put(sent.chat.id, sent.message_id, text)
+            result_cache.put_image(sent.chat.id, sent.message_id, image_bytes)
         else:
             structured = await structure_text(text)
-            result_msg = await send_result(reply_target, structured, reply_markup=actions_keyboard(progressive=False))
+            result_msg = await send_result(
+                reply_target, structured, reply_markup=actions_keyboard(progressive=False, with_pdf=True)
+            )
             if result_msg is not None:
                 result_cache.put(result_msg.chat.id, result_msg.message_id, text)
+                result_cache.put_image(result_msg.chat.id, result_msg.message_id, image_bytes)
 
 
 async def process_image_document(
@@ -75,7 +82,8 @@ async def process_image_document(
     buffer = BytesIO()
     await bot.download(media_message.document, destination=buffer)
     async with ChatActionSender(bot=bot, chat_id=reply_target.chat.id, action=ChatAction.UPLOAD_DOCUMENT):
-        text = await recognize_text(buffer.getvalue())
+        image_bytes = buffer.getvalue()
+        text = await recognize_text(image_bytes)
         if not text.strip():
             await reply_target.answer(NO_TEXT_MESSAGE)
             return
@@ -88,13 +96,19 @@ async def process_image_document(
                 preview = _GIST_BUDGET_PREVIEW
             else:
                 preview = _GIST_FAIL_PREVIEW
-            sent: Message = await reply_target.answer(preview, reply_markup=actions_keyboard(progressive=True))
+            sent: Message = await reply_target.answer(
+                preview, reply_markup=actions_keyboard(progressive=True, with_pdf=True)
+            )
             result_cache.put(sent.chat.id, sent.message_id, text)
+            result_cache.put_image(sent.chat.id, sent.message_id, image_bytes)
         else:
             structured = await structure_text(text)
-            result_msg = await send_result(reply_target, structured, reply_markup=actions_keyboard(progressive=False))
+            result_msg = await send_result(
+                reply_target, structured, reply_markup=actions_keyboard(progressive=False, with_pdf=True)
+            )
             if result_msg is not None:
                 result_cache.put(result_msg.chat.id, result_msg.message_id, text)
+                result_cache.put_image(result_msg.chat.id, result_msg.message_id, image_bytes)
 
 
 @router.message(F.photo)

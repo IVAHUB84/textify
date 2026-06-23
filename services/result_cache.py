@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 CACHE_MAX_SIZE = 500
 CACHE_TTL_SECONDS = 3600
+# Кэш байтов изображения (для кнопки «PDF») держим маленьким: на 1 vCPU/2 ГБ
+# нельзя хранить 500 картинок. Только в памяти, без персистентности.
+IMG_CACHE_MAX_SIZE = 50
 _BUSY_TIMEOUT_MS = 5000
 
 # Ключ (chat_id, message_id): message_id уникален только в пределах чата,
@@ -17,13 +20,21 @@ _BUSY_TIMEOUT_MS = 5000
 _cache: "OrderedDict[tuple[int, int], tuple[str, float]]" = OrderedDict()
 # Сегменты транскрипции (start, end, text) для кнопок «Тайм-коды» и «Субтитры».
 _seg_cache: "OrderedDict[tuple[int, int], tuple[Any, float]]" = OrderedDict()
+# Байты исходного изображения для кнопки «PDF» (searchable PDF из фото).
+_img_cache: "OrderedDict[tuple[int, int], tuple[bytes, float]]" = OrderedDict()
 
 # Путь к SQLite для переживания рестартов. None → персистентность выключена
 # (тесты и любые окружения без init_result_cache работают чисто в памяти).
 _DB_PATH: str | None = None
 
 
-def _put(store: "OrderedDict[tuple[int, int], tuple[Any, float]]", chat_id: int, message_id: int, value: Any) -> None:
+def _put(
+    store: "OrderedDict[tuple[int, int], tuple[Any, float]]",
+    chat_id: int,
+    message_id: int,
+    value: Any,
+    max_size: int = CACHE_MAX_SIZE,
+) -> None:
     key = (chat_id, message_id)
     # Удаляем просроченные записи с начала (они старейшие) до первой живой.
     now = time.monotonic()
@@ -36,7 +47,7 @@ def _put(store: "OrderedDict[tuple[int, int], tuple[Any, float]]", chat_id: int,
     if key in store:
         store.move_to_end(key)
     store[key] = (value, now)
-    while len(store) > CACHE_MAX_SIZE:
+    while len(store) > max_size:
         store.popitem(last=False)
 
 
@@ -150,3 +161,11 @@ def put_segments(chat_id: int, message_id: int, segments: list) -> None:
 
 def get_segments(chat_id: int, message_id: int) -> list | None:
     return _get(_seg_cache, chat_id, message_id)
+
+
+def put_image(chat_id: int, message_id: int, data: bytes) -> None:
+    _put(_img_cache, chat_id, message_id, data, max_size=IMG_CACHE_MAX_SIZE)
+
+
+def get_image(chat_id: int, message_id: int) -> bytes | None:
+    return _get(_img_cache, chat_id, message_id)

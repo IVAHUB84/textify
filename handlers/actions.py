@@ -13,6 +13,7 @@ from aiogram.utils.chat_action import ChatActionSender
 
 from services import result_cache
 from services.llm import BUDGET_EXCEEDED, extract_tasks, summarize, translate
+from services.ocr import recognize_pdf
 from services.reply import send_result
 from services.sentinel import _BudgetExceededType
 from services.structure import structure_text
@@ -26,11 +27,14 @@ _CB_TRANSLATE = "act:tr"
 _CB_TASKS = "act:task"
 _CB_TIMESTAMPS = "act:ts"
 _CB_SRT = "act:srt"
+_CB_PDF = "act:pdf"
 
 _LLMAction = Callable[[str], Awaitable["str | None | _BudgetExceededType"]]
 
 
-def actions_keyboard(progressive: bool = False, with_extras: bool = False) -> InlineKeyboardMarkup:
+def actions_keyboard(
+    progressive: bool = False, with_extras: bool = False, with_pdf: bool = False
+) -> InlineKeyboardMarkup:
     if progressive:
         rows = [
             [
@@ -59,6 +63,8 @@ def actions_keyboard(progressive: bool = False, with_extras: bool = False) -> In
                 InlineKeyboardButton(text="Субтитры", callback_data=_CB_SRT),
             ]
         )
+    if with_pdf:
+        rows.append([InlineKeyboardButton(text="📄 PDF", callback_data=_CB_PDF)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -173,4 +179,34 @@ async def handle_srt(callback: CallbackQuery) -> None:
     await raw_msg.answer_document(
         BufferedInputFile(srt.encode("utf-8"), filename="subtitles.srt"),
         caption="Субтитры в формате .srt",
+    )
+
+
+@actions_router.callback_query(F.data == _CB_PDF)
+async def handle_pdf(callback: CallbackQuery) -> None:
+    await callback.answer("Готовлю…")
+
+    raw_msg = _cached_message(callback)
+    if raw_msg is None:
+        await callback.answer("Изображение недоступно", show_alert=True)
+        return
+
+    image_bytes = result_cache.get_image(raw_msg.chat.id, raw_msg.message_id)
+    if not image_bytes:
+        await callback.answer("Изображение недоступно (устарело)", show_alert=True)
+        return
+
+    bot: Bot = callback.bot  # type: ignore[assignment]
+    async with ChatActionSender(
+        bot=bot, chat_id=raw_msg.chat.id, action=ChatAction.UPLOAD_DOCUMENT
+    ):
+        pdf = await recognize_pdf(image_bytes)
+
+    if not pdf:
+        await raw_msg.answer("Не удалось сформировать PDF. Попробуйте позже.")
+        return
+
+    await raw_msg.answer_document(
+        BufferedInputFile(pdf, filename="document.pdf"),
+        caption="PDF с текстовым слоем (текст можно выделять и искать).",
     )
