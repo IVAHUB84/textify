@@ -19,7 +19,7 @@ def actions_keyboard(progressive: bool = False) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="Показать полностью", callback_data=_CB_FULL),
+                    InlineKeyboardButton(text="Полностью", callback_data=_CB_FULL),
                     InlineKeyboardButton(text="Кратко", callback_data=_CB_SUMMARIZE),
                 ]
             ]
