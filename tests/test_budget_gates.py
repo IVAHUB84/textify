@@ -251,52 +251,6 @@ async def test_summarize_cf_budget_exhausted_returns_sentinel():
 
 
 @pytest.mark.asyncio
-async def test_translate_cf_budget_allows_consume_called():
-    """translate, CF-провайдер, allow=True → consume вызван."""
-    with (
-        patch("services.llm.cf_budget_allow", new=AsyncMock(return_value=True)),
-        patch("services.llm.cf_budget_consume", new=AsyncMock()) as mock_consume,
-        patch("services.llm.build_provider") as mock_build,
-        patch("services.llm.httpx.AsyncClient") as mock_client_cls,
-    ):
-        from services.structure import _CloudflareProvider
-        fake_provider = MagicMock(spec=_CloudflareProvider)
-        fake_provider.complete = AsyncMock(return_value="translation")
-        mock_build.return_value = fake_provider
-
-        mock_client = MagicMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client_cls.return_value = mock_client
-
-        from services.llm import translate
-        result = await translate("some text")
-
-    mock_consume.assert_awaited_once()
-    assert result == "translation"
-
-
-@pytest.mark.asyncio
-async def test_translate_cf_budget_exhausted_returns_sentinel():
-    """translate, CF-провайдер, allow=False → BUDGET_EXCEEDED."""
-    with (
-        patch("services.llm.cf_budget_allow", new=AsyncMock(return_value=False)),
-        patch("services.llm.cf_budget_consume", new=AsyncMock()) as mock_consume,
-        patch("services.llm.build_provider") as mock_build,
-    ):
-        from services.structure import _CloudflareProvider
-        fake_provider = MagicMock(spec=_CloudflareProvider)
-        mock_build.return_value = fake_provider
-
-        from services.sentinel import BUDGET_EXCEEDED
-        from services.llm import translate
-        result = await translate("Привет мир")
-
-    mock_consume.assert_not_awaited()
-    assert result is BUDGET_EXCEEDED
-
-
-@pytest.mark.asyncio
 async def test_summarize_groq_no_consume():
     """summarize, Groq-провайдер → consume CF НЕ вызван."""
     with (
@@ -340,21 +294,3 @@ async def test_summarize_cf_exhausted_warning_logged(caplog):
     assert any("budget" in r.message.lower() for r in caplog.records)
 
 
-@pytest.mark.asyncio
-async def test_translate_cf_exhausted_warning_logged(caplog):
-    """При исчерпании бюджета translate — warning в логах."""
-    import logging
-
-    with (
-        patch("services.llm.cf_budget_allow", new=AsyncMock(return_value=False)),
-        patch("services.llm.build_provider") as mock_build,
-        caplog.at_level(logging.WARNING, logger="services.llm"),
-    ):
-        from services.structure import _CloudflareProvider
-        fake_provider = MagicMock(spec=_CloudflareProvider)
-        mock_build.return_value = fake_provider
-
-        from services.llm import translate
-        await translate("text")
-
-    assert any("budget" in r.message.lower() for r in caplog.records)

@@ -368,3 +368,141 @@ async def test_no_speech_message_via_direct_answer():
 
     mock_send.assert_not_awaited()
     message.answer.assert_called_once_with(NO_SPEECH_MESSAGE)
+
+
+# ---------------------------------------------------------------------------
+# send_result — возврат Message / None (для кэширования по message_id)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_result_short_returns_message():
+    """Короткий текст → send_result возвращает объект Message (результат answer)."""
+    message = _make_message()
+    sent_msg = AsyncMock()
+    message.answer.return_value = sent_msg
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        result = await send_result(message, "Короткий текст")
+
+    assert result is sent_msg
+
+
+@pytest.mark.asyncio
+async def test_send_result_series_returns_none():
+    """Текст, разбитый на серию частей, → send_result возвращает None."""
+    message = _make_message()
+    paragraph = "Слово другое предложение здесь.\n\n"
+    text = paragraph * 150
+    parts = split_text(text)
+    assert 1 < len(parts) <= MAX_PARTS
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        result = await send_result(message, text)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_send_result_very_long_returns_none():
+    """Очень длинный текст (файл) → send_result возвращает None."""
+    message = _make_message()
+    paragraph = "Длинный абзац текста для теста разбивки.\n\n"
+    text = paragraph * 1000
+    parts = split_text(text)
+    assert len(parts) > MAX_PARTS
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        result = await send_result(message, text)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_send_result_empty_returns_none():
+    """Пустой текст → send_result возвращает None."""
+    message = _make_message()
+    result = await send_result(message, "")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Атрибуция ATTRIBUTION_FOOTER в non-progressive (групповой) ветке
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_audio_non_progressive_attribution_footer_present():
+    """progressive=False (группы): короткий результат содержит подпись ATTRIBUTION_FOOTER."""
+    from handlers.audio import process_audio
+    import services.result_cache as cache_mod
+
+    cache_mod._cache.clear()
+
+    message = _make_message()
+    sent_msg = AsyncMock()
+    sent_msg.message_id = 999
+    message.answer.return_value = sent_msg
+
+    bot = AsyncMock()
+
+    async def fake_download(src, *, destination):
+        destination.write(b"fake")
+
+    bot.download = fake_download
+
+    sender_mock = MagicMock()
+    sender_mock.__aenter__ = AsyncMock(return_value=None)
+    sender_mock.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("handlers.audio.ChatActionSender", return_value=sender_mock),
+        patch("handlers.audio.transcribe", new=AsyncMock(return_value="текст")),
+        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## структура")),
+        patch("services.reply.config", {"ATTRIBUTION_FOOTER": True}),
+        patch("services.reply.get_bot_username", return_value="TestifyBot"),
+    ):
+        await process_audio(message, message, bot, b"audio", progressive=False)
+
+    message.answer.assert_awaited_once()
+    sent_text = message.answer.await_args[0][0]
+    assert "@TestifyBot" in sent_text
+
+
+@pytest.mark.asyncio
+async def test_image_non_progressive_attribution_footer_present():
+    """process_photo progressive=False (группы): короткий результат содержит подпись ATTRIBUTION_FOOTER."""
+    from handlers.image import process_photo
+    import services.result_cache as cache_mod
+
+    cache_mod._cache.clear()
+
+    message = _make_message()
+    message.photo = [AsyncMock(file_id="fid")]
+    sent_msg = AsyncMock()
+    sent_msg.message_id = 888
+    message.answer.return_value = sent_msg
+
+    bot = AsyncMock()
+
+    async def fake_download(src, *, destination):
+        destination.write(b"fake")
+
+    bot.download = fake_download
+
+    sender_mock = MagicMock()
+    sender_mock.__aenter__ = AsyncMock(return_value=None)
+    sender_mock.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("handlers.image.ChatActionSender", return_value=sender_mock),
+        patch("handlers.image.recognize_text", new=AsyncMock(return_value="текст")),
+        patch("handlers.image.structure_text", new=AsyncMock(return_value="## структура")),
+        patch("services.reply.config", {"ATTRIBUTION_FOOTER": True}),
+        patch("services.reply.get_bot_username", return_value="TestifyBot"),
+    ):
+        await process_photo(message, message, bot, progressive=False)
+
+    message.answer.assert_awaited_once()
+    sent_text = message.answer.await_args[0][0]
+    assert "@TestifyBot" in sent_text

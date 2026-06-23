@@ -20,17 +20,28 @@ def mock_chat_action_sender():
         yield sender
 
 
-def _make_callback(text: str | None = "Распознанный текст") -> MagicMock:
+@pytest.fixture(autouse=True)
+def clear_cache():
+    import services.result_cache as cache_mod
+    cache_mod._cache.clear()
+    yield
+    cache_mod._cache.clear()
+
+
+def _make_callback(cached_text: str = "Распознанный текст", message_id: int = 6001) -> MagicMock:
+    import services.result_cache as cache_mod
     from aiogram.types import Message
 
     callback = MagicMock()
     callback.answer = AsyncMock()
     callback.bot = AsyncMock()
     callback.message = MagicMock(spec=Message)
-    callback.message.text = text
+    callback.message.message_id = message_id
     callback.message.answer = AsyncMock()
     callback.message.chat = MagicMock()
     callback.message.chat.id = 12345
+    if cached_text:
+        cache_mod.put(12345, message_id, cached_text)
     return callback
 
 
@@ -90,26 +101,6 @@ async def test_handle_action_text_result_calls_send_result():
 
     mock_send.assert_awaited_once()
     assert mock_send.await_args[0][1] == "- пункт 1"
-
-
-@pytest.mark.asyncio
-async def test_handle_action_budget_exceeded_translate():
-    """BUDGET_EXCEEDED в translate → правильное сообщение."""
-    from services.sentinel import BUDGET_EXCEEDED
-    from handlers.actions import handle_translate
-
-    callback = _make_callback("Hello world")
-
-    with (
-        patch("handlers.actions.translate", new=AsyncMock(return_value=BUDGET_EXCEEDED)),
-        patch("handlers.actions.send_result", new=AsyncMock()),
-    ):
-        await handle_translate(callback)
-
-    callback.message.answer.assert_awaited_once()
-    assert callback.message.answer.await_args[0][0] == (
-        "Дневной бесплатный лимит исчерпан, попробуйте завтра."
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,16 +1,27 @@
-"""Тесты интеграции structure_text в хендлеры изображений и аудио."""
+"""Тесты интеграции структурирования в хендлеры изображений и аудио."""
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiogram.types import InlineKeyboardMarkup
 
+import services.result_cache as cache_mod
 from handlers.image import NO_TEXT_MESSAGE, handle_photo, handle_image_document
 from handlers.audio import NO_SPEECH_MESSAGE, handle_voice, handle_audio, handle_audio_document
 
 
-def _make_message() -> AsyncMock:
+_CHAT_ID = 88888
+
+
+def _make_message(message_id: int = 77) -> AsyncMock:
     msg = AsyncMock()
     msg.answer = AsyncMock()
+    msg.message_id = message_id
+    msg.chat = AsyncMock()
+    msg.chat.id = _CHAT_ID
+    sent = AsyncMock()
+    sent.message_id = message_id + 1000
+    sent.chat = AsyncMock()
+    sent.chat.id = _CHAT_ID
+    msg.answer.return_value = sent
     return msg
 
 
@@ -31,6 +42,13 @@ def mock_chat_action_sender():
         yield sender
 
 
+@pytest.fixture(autouse=True)
+def clear_cache():
+    cache_mod._cache.clear()
+    yield
+    cache_mod._cache.clear()
+
+
 def _make_bot_with_download(content: bytes = b"fake") -> AsyncMock:
     bot = AsyncMock()
 
@@ -42,34 +60,36 @@ def _make_bot_with_download(content: bytes = b"fake") -> AsyncMock:
 
 
 # ---------------------------------------------------------------------------
-# Канал изображений
+# Канал изображений — личка (progressive=True, суть вместо полного текста)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_handle_photo_calls_structure_text_on_nonempty_ocr():
-    """handle_photo вызывает structure_text при непустом OCR и отдаёт результат через send_result."""
+async def test_handle_photo_progressive_sends_preview_on_nonempty_ocr():
+    """handle_photo в личке → отправляет превью (суть), кэш заполнен, structure_text не вызван."""
     message = _make_message()
     message.photo = [AsyncMock(file_id="fid")]
     bot = _make_bot_with_download()
 
     with (
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="raw ocr")),
-        patch("handlers.image.structure_text", new=AsyncMock(return_value="## structured")) as mock_struct,
-        patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.image.summarize_gist", new=AsyncMock(return_value="суть")),
+        patch("handlers.image.structure_text", new=AsyncMock()) as mock_struct,
     ):
         await handle_photo(message, bot)
 
-    mock_struct.assert_awaited_once_with("raw ocr")
-    mock_send.assert_awaited_once()
-    args, kwargs = mock_send.await_args
-    assert args == (message, "## structured")
-    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
+    mock_struct.assert_not_awaited()
+    message.answer.assert_awaited_once()
+    preview = message.answer.await_args[0][0]
+    assert preview == "суть"
+
+    sent_id = message.answer.return_value.message_id
+    assert cache_mod.get(_CHAT_ID, sent_id) == "raw ocr"
 
 
 @pytest.mark.asyncio
 async def test_handle_photo_no_structure_on_empty_ocr():
-    """handle_photo при пустом OCR отправляет NO_TEXT_MESSAGE напрямую, structure_text не вызывается."""
+    """handle_photo при пустом OCR отправляет NO_TEXT_MESSAGE, structure_text не вызывается."""
     message = _make_message()
     message.photo = [AsyncMock(file_id="fid")]
     bot = _make_bot_with_download()
@@ -77,39 +97,37 @@ async def test_handle_photo_no_structure_on_empty_ocr():
     with (
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="")),
         patch("handlers.image.structure_text", new=AsyncMock()) as mock_struct,
-        patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.image.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
         await handle_photo(message, bot)
 
     mock_struct.assert_not_awaited()
-    mock_send.assert_not_awaited()
+    mock_gist.assert_not_awaited()
     message.answer.assert_called_once_with(NO_TEXT_MESSAGE)
 
 
 @pytest.mark.asyncio
-async def test_handle_image_document_calls_structure_text_on_nonempty_ocr():
-    """handle_image_document вызывает structure_text при непустом OCR."""
+async def test_handle_image_document_progressive_sends_preview_on_nonempty_ocr():
+    """handle_image_document в личке → превью-суть, структура не вызвана."""
     message = _make_message()
     message.document = AsyncMock()
     bot = _make_bot_with_download()
 
     with (
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="raw ocr doc")),
-        patch("handlers.image.structure_text", new=AsyncMock(return_value="## doc structured")) as mock_struct,
-        patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.image.summarize_gist", new=AsyncMock(return_value="суть")),
+        patch("handlers.image.structure_text", new=AsyncMock()) as mock_struct,
     ):
         await handle_image_document(message, bot)
 
-    mock_struct.assert_awaited_once_with("raw ocr doc")
-    mock_send.assert_awaited_once()
-    args, kwargs = mock_send.await_args
-    assert args == (message, "## doc structured")
-    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
+    mock_struct.assert_not_awaited()
+    message.answer.assert_awaited_once()
+    assert message.answer.await_args[0][0] == "суть"
 
 
 @pytest.mark.asyncio
 async def test_handle_image_document_no_structure_on_empty_ocr():
-    """handle_image_document при пустом OCR — NO_TEXT_MESSAGE, structure_text не вызван."""
+    """handle_image_document при пустом OCR — NO_TEXT_MESSAGE."""
     message = _make_message()
     message.document = AsyncMock()
     bot = _make_bot_with_download()
@@ -117,12 +135,12 @@ async def test_handle_image_document_no_structure_on_empty_ocr():
     with (
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="   ")),
         patch("handlers.image.structure_text", new=AsyncMock()) as mock_struct,
-        patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.image.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
         await handle_image_document(message, bot)
 
     mock_struct.assert_not_awaited()
-    mock_send.assert_not_awaited()
+    mock_gist.assert_not_awaited()
     message.answer.assert_called_once_with(NO_TEXT_MESSAGE)
 
 
@@ -137,34 +155,35 @@ def test_image_handler_does_not_import_httpx():
 
 
 # ---------------------------------------------------------------------------
-# Канал аудио
+# Канал аудио — личка (progressive=True, суть вместо полного текста)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_handle_voice_calls_structure_text_on_nonempty_transcript():
-    """handle_voice вызывает structure_text при непустом транскрипте."""
+async def test_handle_voice_progressive_sends_preview_on_nonempty_transcript():
+    """handle_voice в личке → превью-суть, structure_text не вызван."""
     message = _make_message()
     message.voice = AsyncMock()
     bot = _make_bot_with_download()
 
     with (
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="voice transcript")),
-        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## voice structured")) as mock_struct,
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
+        patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
     ):
         await handle_voice(message, bot)
 
-    mock_struct.assert_awaited_once_with("voice transcript")
-    mock_send.assert_awaited_once()
-    args, kwargs = mock_send.await_args
-    assert args == (message, "## voice structured")
-    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
+    mock_struct.assert_not_awaited()
+    message.answer.assert_awaited_once()
+    assert message.answer.await_args[0][0] == "суть"
+
+    sent_id = message.answer.return_value.message_id
+    assert cache_mod.get(_CHAT_ID, sent_id) == "voice transcript"
 
 
 @pytest.mark.asyncio
 async def test_handle_voice_no_structure_on_empty_transcript():
-    """handle_voice при пустом транскрипте — NO_SPEECH_MESSAGE напрямую, structure_text не вызван."""
+    """handle_voice при пустом транскрипте — NO_SPEECH_MESSAGE, structure_text не вызван."""
     message = _make_message()
     message.voice = AsyncMock()
     bot = _make_bot_with_download()
@@ -172,39 +191,37 @@ async def test_handle_voice_no_structure_on_empty_transcript():
     with (
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
         await handle_voice(message, bot)
 
     mock_struct.assert_not_awaited()
-    mock_send.assert_not_awaited()
+    mock_gist.assert_not_awaited()
     message.answer.assert_called_once_with(NO_SPEECH_MESSAGE)
 
 
 @pytest.mark.asyncio
-async def test_handle_audio_calls_structure_text_on_nonempty_transcript():
-    """handle_audio вызывает structure_text при непустом транскрипте."""
+async def test_handle_audio_progressive_sends_preview_on_nonempty_transcript():
+    """handle_audio в личке → превью-суть."""
     message = _make_message()
     message.audio = AsyncMock()
     bot = _make_bot_with_download()
 
     with (
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="audio text")),
-        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## audio ok")) as mock_struct,
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть аудио")),
+        patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
     ):
         await handle_audio(message, bot)
 
-    mock_struct.assert_awaited_once_with("audio text")
-    mock_send.assert_awaited_once()
-    args, kwargs = mock_send.await_args
-    assert args == (message, "## audio ok")
-    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
+    mock_struct.assert_not_awaited()
+    message.answer.assert_awaited_once()
+    assert message.answer.await_args[0][0] == "суть аудио"
 
 
 @pytest.mark.asyncio
 async def test_handle_audio_no_structure_on_empty_transcript():
-    """handle_audio при пустом транскрипте — NO_SPEECH_MESSAGE, structure_text не вызван."""
+    """handle_audio при пустом транскрипте — NO_SPEECH_MESSAGE."""
     message = _make_message()
     message.audio = AsyncMock()
     bot = _make_bot_with_download()
@@ -212,34 +229,32 @@ async def test_handle_audio_no_structure_on_empty_transcript():
     with (
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="  ")),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
         await handle_audio(message, bot)
 
     mock_struct.assert_not_awaited()
-    mock_send.assert_not_awaited()
+    mock_gist.assert_not_awaited()
     message.answer.assert_called_once_with(NO_SPEECH_MESSAGE)
 
 
 @pytest.mark.asyncio
-async def test_handle_audio_document_calls_structure_text_on_nonempty_transcript():
-    """handle_audio_document вызывает structure_text при непустом транскрипте."""
+async def test_handle_audio_document_progressive_sends_preview_on_nonempty_transcript():
+    """handle_audio_document в личке → превью-суть."""
     message = _make_message()
     message.document = AsyncMock()
     bot = _make_bot_with_download()
 
     with (
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="doc audio text")),
-        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## doc ok")) as mock_struct,
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть документа")),
+        patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
     ):
         await handle_audio_document(message, bot)
 
-    mock_struct.assert_awaited_once_with("doc audio text")
-    mock_send.assert_awaited_once()
-    args, kwargs = mock_send.await_args
-    assert args == (message, "## doc ok")
-    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
+    mock_struct.assert_not_awaited()
+    message.answer.assert_awaited_once()
+    assert message.answer.await_args[0][0] == "суть документа"
 
 
 @pytest.mark.asyncio
@@ -252,12 +267,12 @@ async def test_handle_audio_document_no_structure_on_empty_transcript():
     with (
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
         await handle_audio_document(message, bot)
 
     mock_struct.assert_not_awaited()
-    mock_send.assert_not_awaited()
+    mock_gist.assert_not_awaited()
     message.answer.assert_called_once_with(NO_SPEECH_MESSAGE)
 
 

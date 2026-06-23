@@ -645,11 +645,14 @@ async def test_group_asr_force_local_false():
 
 @pytest.mark.asyncio
 async def test_private_photo_handled_without_reply():
-    """Фото в личке обрабатывается автоматически (без reply)."""
+    """Фото в личке обрабатывается автоматически (без reply) — возвращает превью."""
     from handlers.image import handle_photo
 
     message = _make_message(chat_type="private", has_photo=True)
     message.photo = [MagicMock(file_id="fid")]
+    sent = AsyncMock()
+    sent.message_id = 9001
+    message.answer = AsyncMock(return_value=sent)
     bot = AsyncMock()
 
     async def fake_download(src, *, destination):
@@ -661,20 +664,22 @@ async def test_private_photo_handled_without_reply():
     with (
         patch("handlers.image.ChatActionSender", return_value=sender_mock),
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="текст")),
-        patch("handlers.image.structure_text", new=AsyncMock(return_value="## текст")),
-        patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.image.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_photo(message, bot)
 
-    mock_send.assert_awaited_once()
+    message.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_private_voice_handled_without_reply():
-    """Голосовое в личке обрабатывается автоматически (без reply)."""
+    """Голосовое в личке обрабатывается автоматически (без reply) — возвращает превью."""
     from handlers.audio import handle_voice
 
     message = _make_message(chat_type="private", has_voice=True)
+    sent = AsyncMock()
+    sent.message_id = 9002
+    message.answer = AsyncMock(return_value=sent)
     bot = AsyncMock()
 
     async def fake_download(src, *, destination):
@@ -686,20 +691,22 @@ async def test_private_voice_handled_without_reply():
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="речь")),
-        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## речь")),
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_voice(message, bot)
 
-    mock_send.assert_awaited_once()
+    message.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_private_audio_handled_without_reply():
-    """Аудиофайл в личке обрабатывается автоматически."""
+    """Аудиофайл в личке обрабатывается автоматически — возвращает превью."""
     from handlers.audio import handle_audio
 
     message = _make_message(chat_type="private", has_audio=True)
+    sent = AsyncMock()
+    sent.message_id = 9003
+    message.answer = AsyncMock(return_value=sent)
     bot = AsyncMock()
 
     async def fake_download(src, *, destination):
@@ -711,12 +718,11 @@ async def test_private_audio_handled_without_reply():
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="речь")),
-        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## речь")),
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_audio(message, bot)
 
-    mock_send.assert_awaited_once()
+    message.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -736,11 +742,15 @@ async def test_private_text_stub_reply():
 
 @pytest.mark.asyncio
 async def test_group_result_has_actions_keyboard():
-    """Групповая обработка медиа → send_result вызывается с actions_keyboard."""
+    """Групповая обработка медиа → ответ с actions_keyboard (одна кнопка act:sum)."""
+    from aiogram.types import InlineKeyboardMarkup
     import handlers.group as grp
     grp.set_bot_username("TestifyBot")
 
     reply_msg = _make_message(chat_type="group", has_photo=True)
+    sent = AsyncMock()
+    sent.message_id = 8001
+    reply_msg.answer = AsyncMock(return_value=sent)
     trigger_msg = _make_message(chat_type="group", reply_to=reply_msg)
     bot = AsyncMock()
 
@@ -755,71 +765,54 @@ async def test_group_result_has_actions_keyboard():
         patch("handlers.image.ChatActionSender", return_value=sender_mock),
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="текст")),
         patch("handlers.image.structure_text", new=AsyncMock(return_value="## текст")),
-        patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
     ):
         await grp.handle_group_textify_command(trigger_msg, bot)
 
-    mock_send.assert_awaited_once()
-    call_kwargs = mock_send.await_args[1]
-    assert call_kwargs.get("reply_markup") is not None
+    reply_msg.answer.assert_awaited_once()
+    call_kwargs = reply_msg.answer.await_args[1]
+    markup = call_kwargs.get("reply_markup")
+    assert markup is not None
+    assert isinstance(markup, InlineKeyboardMarkup)
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    assert len(buttons) == 1
+    assert buttons[0].callback_data == "act:sum"
 
 
 @pytest.mark.asyncio
 async def test_group_callback_sum_works():
-    """callback act:sum из группового сообщения отрабатывает через handle_summarize."""
+    """callback act:sum из группового сообщения отрабатывает через handle_summarize (источник — кэш)."""
+    import services.result_cache as cache_mod
     from handlers.actions import handle_summarize
     from aiogram.types import Message
+
+    cache_mod._cache.clear()
 
     callback = MagicMock()
     callback.answer = AsyncMock()
     callback.bot = AsyncMock()
     callback.message = MagicMock(spec=Message)
-    callback.message.text = "Групповой текст"
+    callback.message.message_id = 999
     callback.message.answer = AsyncMock()
     callback.message.chat = MagicMock()
     callback.message.chat.id = 999
     callback.message.chat.type = "group"
 
-    sender_mock = _make_sender_mock()
-
-    with (
-        patch("handlers.actions.ChatActionSender", return_value=sender_mock),
-        patch("handlers.actions.summarize", new=AsyncMock(return_value="- краткий пункт")),
-        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
-    ):
-        await handle_summarize(callback)
-
-    mock_send.assert_awaited_once()
-    assert mock_send.await_args[0][1] == "- краткий пункт"
-
-
-@pytest.mark.asyncio
-async def test_group_callback_tr_works():
-    """callback act:tr из группового сообщения отрабатывает через handle_translate."""
-    from handlers.actions import handle_translate
-    from aiogram.types import Message
-
-    callback = MagicMock()
-    callback.answer = AsyncMock()
-    callback.bot = AsyncMock()
-    callback.message = MagicMock(spec=Message)
-    callback.message.text = "Group text to translate"
-    callback.message.answer = AsyncMock()
-    callback.message.chat = MagicMock()
-    callback.message.chat.id = 999
-    callback.message.chat.type = "supergroup"
+    cache_mod.put(999, 999, "Групповой текст")
 
     sender_mock = _make_sender_mock()
 
-    with (
-        patch("handlers.actions.ChatActionSender", return_value=sender_mock),
-        patch("handlers.actions.translate", new=AsyncMock(return_value="Переведённый текст")),
-        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
-    ):
-        await handle_translate(callback)
+    try:
+        with (
+            patch("handlers.actions.ChatActionSender", return_value=sender_mock),
+            patch("handlers.actions.summarize", new=AsyncMock(return_value="- краткий пункт")),
+            patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
+        ):
+            await handle_summarize(callback)
 
-    mock_send.assert_awaited_once()
-    assert mock_send.await_args[0][1] == "Переведённый текст"
+        mock_send.assert_awaited_once()
+        assert mock_send.await_args[0][1] == "- краткий пункт"
+    finally:
+        cache_mod._cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -889,6 +882,9 @@ async def test_private_audio_uses_default_force_local():
     from handlers.audio import handle_voice
 
     message = _make_message(chat_type="private", has_voice=True)
+    sent = AsyncMock()
+    sent.message_id = 9004
+    message.answer = AsyncMock(return_value=sent)
     bot = AsyncMock()
 
     async def fake_download(src, *, destination):
@@ -900,8 +896,7 @@ async def test_private_audio_uses_default_force_local():
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="речь")) as mock_tr,
-        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## речь")),
-        patch("handlers.audio.send_result", new=AsyncMock()),
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_voice(message, bot)
 

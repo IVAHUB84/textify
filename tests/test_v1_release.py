@@ -342,12 +342,14 @@ async def test_cf_fallback_to_local_no_deadlock(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_chat_action_sender_image_text_sends_result():
-    """handle_photo: при непустом OCR send_result вызывается как раньше."""
+    """handle_photo: при непустом OCR в личке отправляется превью-суть (progressive=True)."""
     from handlers.image import handle_photo
 
     message = MagicMock()
     message.photo = [MagicMock(file_id="fid")]
-    message.answer = AsyncMock()
+    sent = AsyncMock()
+    sent.message_id = 5001
+    message.answer = AsyncMock(return_value=sent)
     message.chat = MagicMock()
     message.chat.id = 42
     bot = AsyncMock()
@@ -364,15 +366,13 @@ async def test_chat_action_sender_image_text_sends_result():
     with (
         patch("handlers.image.ChatActionSender", return_value=sender_mock),
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="распознанный текст")),
-        patch("handlers.image.structure_text", new=AsyncMock(return_value="## структурированный")),
-        patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.image.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_photo(message, bot)
 
-    mock_send.assert_awaited_once()
-    args, kwargs = mock_send.await_args
-    assert args[1] == "## структурированный"
-    message.answer.assert_not_called()
+    message.answer.assert_awaited_once()
+    preview = message.answer.await_args[0][0]
+    assert preview == "суть"
 
 
 @pytest.mark.asyncio
@@ -410,12 +410,14 @@ async def test_chat_action_sender_image_empty_sends_service_message():
 
 @pytest.mark.asyncio
 async def test_chat_action_sender_audio_text_sends_result():
-    """handle_voice: при непустом транскрипте send_result вызывается как раньше."""
+    """handle_voice: при непустом транскрипте в личке отправляется превью-суть (progressive=True)."""
     from handlers.audio import handle_voice
 
     message = MagicMock()
     message.voice = MagicMock()
-    message.answer = AsyncMock()
+    sent = AsyncMock()
+    sent.message_id = 5002
+    message.answer = AsyncMock(return_value=sent)
     message.chat = MagicMock()
     message.chat.id = 42
     bot = AsyncMock()
@@ -432,14 +434,13 @@ async def test_chat_action_sender_audio_text_sends_result():
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="транскрипт")),
-        patch("handlers.audio.structure_text", new=AsyncMock(return_value="## структура")),
-        patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть аудио")),
     ):
         await handle_voice(message, bot)
 
-    mock_send.assert_awaited_once()
-    args, kwargs = mock_send.await_args
-    assert args[1] == "## структура"
+    message.answer.assert_awaited_once()
+    preview = message.answer.await_args[0][0]
+    assert preview == "суть аудио"
 
 
 @pytest.mark.asyncio
@@ -477,33 +478,41 @@ async def test_chat_action_sender_audio_empty_sends_service_message():
 
 @pytest.mark.asyncio
 async def test_chat_action_sender_actions_text_sends_result():
-    """_handle_action: при непустом результате send_result вызывается как раньше."""
+    """handle_summarize: при наличии текста в кэше send_result вызывается."""
+    import services.result_cache as cache_mod
     from handlers.actions import handle_summarize
 
     from aiogram.types import Message
+
+    cache_mod._cache.clear()
 
     callback = MagicMock()
     callback.answer = AsyncMock()
     callback.bot = AsyncMock()
     callback.message = MagicMock(spec=Message)
-    callback.message.text = "некий текст"
+    callback.message.message_id = 7777
     callback.message.answer = AsyncMock()
     callback.message.chat = MagicMock()
     callback.message.chat.id = 42
+
+    cache_mod.put(42, 7777, "некий текст")
 
     sender_mock = MagicMock()
     sender_mock.__aenter__ = AsyncMock(return_value=None)
     sender_mock.__aexit__ = AsyncMock(return_value=False)
 
-    with (
-        patch("handlers.actions.ChatActionSender", return_value=sender_mock),
-        patch("handlers.actions.summarize", new=AsyncMock(return_value="- пункт 1")) as mock_sum,
-        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
-    ):
-        await handle_summarize(callback)
+    try:
+        with (
+            patch("handlers.actions.ChatActionSender", return_value=sender_mock),
+            patch("handlers.actions.summarize", new=AsyncMock(return_value="- пункт 1")) as mock_sum,
+            patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
+        ):
+            await handle_summarize(callback)
 
-    mock_sum.assert_awaited_once_with("некий текст")
-    mock_send.assert_awaited_once()
+        mock_sum.assert_awaited_once_with("некий текст")
+        mock_send.assert_awaited_once()
+    finally:
+        cache_mod._cache.clear()
 
 
 # ---------------------------------------------------------------------------

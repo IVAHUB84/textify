@@ -1,4 +1,4 @@
-"""Тесты services/llm.py: summarize, translate, эвристика направления."""
+"""Тесты services/llm.py: summarize, summarize_gist."""
 import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,40 +30,38 @@ _CF_ENV = {
 
 
 # ---------------------------------------------------------------------------
-# Эвристика направления перевода
+# translate и хелперы удалены из модуля
 # ---------------------------------------------------------------------------
 
 
-def test_has_cyrillic_detects_russian():
+def test_translate_not_in_module():
     import services.llm as llm
-    assert llm._has_cyrillic("Привет мир") is True
+    assert not hasattr(llm, "translate"), "translate должна быть удалена из services/llm.py"
 
 
-def test_has_cyrillic_returns_false_for_latin():
+def test_translate_system_not_in_module():
     import services.llm as llm
-    assert llm._has_cyrillic("Hello world") is False
+    assert not hasattr(llm, "_TRANSLATE_SYSTEM"), "_TRANSLATE_SYSTEM должна быть удалена"
 
 
-def test_target_language_cyrillic_returns_en():
+def test_has_cyrillic_not_in_module():
     import services.llm as llm
-    assert llm._target_language("Привет мир") == "en"
+    assert not hasattr(llm, "_has_cyrillic"), "_has_cyrillic должна быть удалена"
 
 
-def test_target_language_latin_returns_ru():
+def test_target_language_not_in_module():
     import services.llm as llm
-    assert llm._target_language("Hello world") == "ru"
+    assert not hasattr(llm, "_target_language"), "_target_language должна быть удалена"
 
 
-def test_target_language_empty_string_no_crash():
+def test_all_contains_summarize_gist():
     import services.llm as llm
-    result = llm._target_language("")
-    assert result in ("en", "ru")
+    assert "summarize_gist" in llm.__all__
 
 
-def test_target_language_whitespace_no_crash():
+def test_all_does_not_contain_translate():
     import services.llm as llm
-    result = llm._target_language("   \n\t  ")
-    assert result in ("en", "ru")
+    assert "translate" not in llm.__all__
 
 
 # ---------------------------------------------------------------------------
@@ -104,58 +102,7 @@ async def test_summarize_truncates_long_input():
 
 
 # ---------------------------------------------------------------------------
-# translate — успешный ответ, проверка направления в промпте
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_translate_cf_success_returns_text():
-    """Мок CF → translate возвращает перевод."""
-    mock_post = AsyncMock(return_value=_make_cf_response("Hello world"))
-
-    with patch.dict("os.environ", _CF_ENV, clear=False):
-        import services.llm as llm
-        importlib.reload(llm)
-        with patch.object(httpx.AsyncClient, "post", mock_post):
-            result = await llm.translate("Привет мир")
-
-    assert result == "Hello world"
-
-
-@pytest.mark.asyncio
-async def test_translate_cyrillic_prompts_english_target():
-    """Кириллический текст → в системном промпте целевой язык английский."""
-    mock_post = AsyncMock(return_value=_make_cf_response("Hello"))
-
-    with patch.dict("os.environ", _CF_ENV, clear=False):
-        import services.llm as llm
-        importlib.reload(llm)
-        with patch.object(httpx.AsyncClient, "post", mock_post) as mp:
-            await llm.translate("Привет мир")
-
-    body = mp.call_args.kwargs.get("json", {})
-    system_content = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "английский" in system_content
-
-
-@pytest.mark.asyncio
-async def test_translate_latin_prompts_russian_target():
-    """Латинский текст → в системном промпте целевой язык русский."""
-    mock_post = AsyncMock(return_value=_make_cf_response("Привет"))
-
-    with patch.dict("os.environ", _CF_ENV, clear=False):
-        import services.llm as llm
-        importlib.reload(llm)
-        with patch.object(httpx.AsyncClient, "post", mock_post) as mp:
-            await llm.translate("Hello world")
-
-    body = mp.call_args.kwargs.get("json", {})
-    system_content = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "русский" in system_content
-
-
-# ---------------------------------------------------------------------------
-# Сбои CF — summarize и translate возвращают None, исключение не пробрасывается
+# Сбои CF — summarize возвращает None, исключение не пробрасывается
 # ---------------------------------------------------------------------------
 
 
@@ -216,34 +163,6 @@ async def test_summarize_returns_none_on_empty_response():
 
 
 @pytest.mark.asyncio
-async def test_translate_returns_none_on_network_error():
-    """httpx.ConnectError → translate возвращает None."""
-    mock_post = AsyncMock(side_effect=httpx.ConnectError("DNS failed"))
-
-    with patch.dict("os.environ", _CF_ENV, clear=False):
-        import services.llm as llm
-        importlib.reload(llm)
-        with patch.object(httpx.AsyncClient, "post", mock_post):
-            result = await llm.translate("текст")
-
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_translate_returns_none_on_empty_response():
-    """Пустой ответ LLM → translate возвращает None."""
-    mock_post = AsyncMock(return_value=_make_cf_response("   "))
-
-    with patch.dict("os.environ", _CF_ENV, clear=False):
-        import services.llm as llm
-        importlib.reload(llm)
-        with patch.object(httpx.AsyncClient, "post", mock_post):
-            result = await llm.translate("текст")
-
-    assert result is None
-
-
-@pytest.mark.asyncio
 async def test_summarize_no_provider_returns_none():
     """Нет CF-кредов → summarize возвращает None, HTTP не вызывается."""
     env = {"LLM_PROVIDER": "cloudflare", "CF_ACCOUNT_ID": "", "CF_API_TOKEN": ""}
@@ -257,3 +176,97 @@ async def test_summarize_no_provider_returns_none():
 
     assert result is None
     mock_post.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# summarize_gist — успешный ответ
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_summarize_gist_cf_success_returns_text():
+    """Мок CF → summarize_gist возвращает строку сути."""
+    mock_post = AsyncMock(return_value=_make_cf_response("Краткая суть текста."))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await llm.summarize_gist("Длинный текст.")
+
+    assert result == "Краткая суть текста."
+
+
+@pytest.mark.asyncio
+async def test_summarize_gist_returns_none_on_network_error():
+    """httpx.ConnectError → summarize_gist возвращает None."""
+    mock_post = AsyncMock(side_effect=httpx.ConnectError("DNS failed"))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await llm.summarize_gist("текст")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_summarize_gist_returns_none_on_empty_response():
+    """Пустой ответ LLM → summarize_gist возвращает None."""
+    mock_post = AsyncMock(return_value=_make_cf_response(""))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await llm.summarize_gist("текст")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_summarize_gist_budget_exceeded():
+    """Исчерпан CF-бюджет → summarize_gist возвращает BUDGET_EXCEEDED."""
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch("services.llm.cf_budget_allow", new=AsyncMock(return_value=False)):
+            result = await llm.summarize_gist("текст")
+
+    from services.sentinel import BUDGET_EXCEEDED
+    assert result is BUDGET_EXCEEDED
+
+
+@pytest.mark.asyncio
+async def test_summarize_gist_no_provider_returns_none():
+    """Нет CF-кредов → summarize_gist возвращает None."""
+    env = {"LLM_PROVIDER": "cloudflare", "CF_ACCOUNT_ID": "", "CF_API_TOKEN": ""}
+    mock_post = AsyncMock()
+
+    with patch.dict("os.environ", env, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await llm.summarize_gist("текст")
+
+    assert result is None
+    mock_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_summarize_gist_truncates_long_input():
+    """Длинный вход усекается до MAX_INPUT_CHARS."""
+    mock_post = AsyncMock(return_value=_make_cf_response("суть"))
+    long_text = "y" * 10000
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post) as mp:
+            await llm.summarize_gist(long_text)
+
+    body = mp.call_args.kwargs.get("json", {})
+    user_content = [m["content"] for m in body["messages"] if m["role"] == "user"][-1]
+    assert ("y" * llm.MAX_INPUT_CHARS) in user_content
+    assert ("y" * (llm.MAX_INPUT_CHARS + 1)) not in user_content
