@@ -3,7 +3,7 @@ from typing import Union
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import Audio, Document, Message, MessageEntity, Voice
+from aiogram.types import Audio, CallbackQuery, Document, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageEntity, Voice
 
 from config import config
 from handlers.audio import process_audio
@@ -14,6 +14,7 @@ group_router = Router()
 group_router.message.filter(F.chat.type.in_({"group", "supergroup"}))
 
 _HINT_MESSAGE = "Ответьте этой командой на голосовое, аудио или фото с текстом."
+_CB_GREC = "grec"
 
 
 def _is_bot_mention(entities: list[MessageEntity] | None, text: str | None) -> bool:
@@ -47,6 +48,14 @@ def _has_supported_media(msg: Message) -> bool:
     return False
 
 
+def _is_audio_media(msg: Message) -> bool:
+    if msg.voice or msg.audio:
+        return True
+    if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("audio/"):
+        return True
+    return False
+
+
 async def _handle_trigger(message: Message, bot: Bot) -> None:
     reply = message.reply_to_message
     if not reply or not _has_supported_media(reply):
@@ -63,6 +72,32 @@ async def handle_group_textify_command(message: Message, bot: Bot) -> None:
 @group_router.message(F.func(_has_trigger))
 async def handle_group_mention(message: Message, bot: Bot) -> None:
     await _handle_trigger(message, bot)
+
+
+@group_router.message(F.func(_has_supported_media))
+async def handle_group_media_offer(message: Message) -> None:
+    if not _has_supported_media(message):
+        return
+    if _is_audio_media(message):
+        label = "Распознать голос"
+    else:
+        label = "Распознать текст"
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=label, callback_data=_CB_GREC)]]
+    )
+    await message.reply(text="Распознать это медиа?", reply_markup=keyboard)
+
+
+@group_router.callback_query(F.data == _CB_GREC)
+async def handle_grec_callback(callback: CallbackQuery, bot: Bot) -> None:
+    reply = callback.message.reply_to_message if callback.message else None  # type: ignore[union-attr]
+
+    if reply is None or isinstance(reply, InaccessibleMessage) or not _has_supported_media(reply):
+        await callback.answer("Медиа недоступно. Перешлите файл заново.", show_alert=True)
+        return
+
+    await callback.answer("Распознаю…")
+    await _dispatch_media(reply, bot)
 
 
 async def _dispatch_media(reply: Message, bot: Bot) -> None:
