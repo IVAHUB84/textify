@@ -1,6 +1,6 @@
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import BotCommand, Message
 
 from config import config
 from services.stats import get_stats
@@ -8,13 +8,40 @@ from services.stats import get_stats
 router = Router()
 
 START_TEXT = (
-    "Привет! Я Textify — бот, который превращает аудио и изображения в текст.\n\n"
-    "Пока я только знакомлюсь с тобой. В следующих версиях появятся:\n"
-    "• распознавание голосовых и аудиосообщений\n"
-    "• распознавание текста на изображениях (OCR)\n"
-    "• структурирование текста (заголовки, списки, ключевые пункты)\n\n"
-    "Следи за обновлениями!"
+    "Привет! Я Textify — превращаю голосовые, аудио и изображения в чистый текст.\n\n"
+    "Что умею:\n"
+    "• Голос и аудио — пришлите сообщение, верну транскрипт.\n"
+    "• Фото и сканы — отправлю распознанный текст (OCR).\n"
+    "• Готовый текст можно сократить или перевести одной кнопкой.\n\n"
+    "Просто пришлите сообщение. Бесплатно, русский и английский. /help — справка."
 )
+
+# Профиль бота в Telegram (задаётся при старте).
+# Description — экран пустого чата («Что умеет этот бот?»), лимит 512 символов.
+BOT_DESCRIPTION = (
+    "Textify превращает голосовые, аудио и изображения в чистый текст.\n\n"
+    "• Голос и аудио → транскрипт\n"
+    "• Фото и сканы → распознанный текст (OCR)\n"
+    "• Любой результат можно сократить или перевести одной кнопкой\n\n"
+    "Просто пришлите сообщение. Бесплатно, поддерживаются русский и английский."
+)
+
+# Short description — карточка профиля бота, лимит 120 символов.
+BOT_SHORT_DESCRIPTION = (
+    "Голос, аудио и фото → чистый текст. Транскрипция, OCR, краткий пересказ и перевод. RU/EN."
+)
+
+BOT_COMMANDS = [
+    BotCommand(command="start", description="О боте и как пользоваться"),
+    BotCommand(command="help", description="Справка по возможностям"),
+]
+
+
+async def setup_bot_profile(bot: Bot) -> None:
+    """Задаёт меню команд, description и short description в Telegram."""
+    await bot.set_my_commands(BOT_COMMANDS)
+    await bot.set_my_description(BOT_DESCRIPTION)
+    await bot.set_my_short_description(BOT_SHORT_DESCRIPTION)
 
 HELP_TEXT = (
     "Доступные команды:\n"

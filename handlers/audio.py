@@ -1,7 +1,9 @@
 from io import BytesIO
 
 from aiogram import Bot, F, Router
+from aiogram.enums import ChatAction
 from aiogram.types import Message
+from aiogram.utils.chat_action import ChatActionSender
 
 from handlers.actions import actions_keyboard
 from services.reply import send_result
@@ -13,30 +15,31 @@ router = Router()
 NO_SPEECH_MESSAGE = "Речь в аудио не распознана."
 
 
-async def _handle_audio_bytes(message: Message, audio_bytes: bytes) -> None:
-    text = await transcribe(audio_bytes)
-    if text.strip():
-        await send_result(message, await structure_text(text), reply_markup=actions_keyboard())
-    else:
-        await message.answer(NO_SPEECH_MESSAGE)
+async def _handle_audio_bytes(message: Message, bot: Bot, audio_bytes: bytes) -> None:
+    async with ChatActionSender(bot=bot, chat_id=message.chat.id, action=ChatAction.TYPING):
+        text = await transcribe(audio_bytes)
+        if text.strip():
+            await send_result(message, await structure_text(text), reply_markup=actions_keyboard())
+        else:
+            await message.answer(NO_SPEECH_MESSAGE)
 
 
 @router.message(F.voice)
 async def handle_voice(message: Message, bot: Bot) -> None:
     buffer = BytesIO()
     await bot.download(message.voice, destination=buffer)
-    await _handle_audio_bytes(message, buffer.getvalue())
+    await _handle_audio_bytes(message, bot, buffer.getvalue())
 
 
 @router.message(F.audio)
 async def handle_audio(message: Message, bot: Bot) -> None:
     buffer = BytesIO()
     await bot.download(message.audio, destination=buffer)
-    await _handle_audio_bytes(message, buffer.getvalue())
+    await _handle_audio_bytes(message, bot, buffer.getvalue())
 
 
 @router.message(F.document & F.document.mime_type & F.document.mime_type.startswith("audio/"))
 async def handle_audio_document(message: Message, bot: Bot) -> None:
     buffer = BytesIO()
     await bot.download(message.document, destination=buffer)
-    await _handle_audio_bytes(message, buffer.getvalue())
+    await _handle_audio_bytes(message, bot, buffer.getvalue())

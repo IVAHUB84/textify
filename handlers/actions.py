@@ -1,5 +1,7 @@
-from aiogram import F, Router
+from aiogram import Bot, F, Router
+from aiogram.enums import ChatAction
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.utils.chat_action import ChatActionSender
 
 from services.llm import summarize, translate
 from services.reply import send_result
@@ -30,16 +32,18 @@ async def _handle_action(callback: CallbackQuery, action: str) -> None:
 
     await callback.answer("Готовлю…")
 
-    if action == _CB_SUMMARIZE:
-        result = await summarize(text)
-    else:
-        result = await translate(text)
+    bot: Bot = callback.bot  # type: ignore[assignment]
+    async with ChatActionSender(bot=bot, chat_id=raw_msg.chat.id, action=ChatAction.TYPING):
+        if action == _CB_SUMMARIZE:
+            result = await summarize(text)
+        else:
+            result = await translate(text)
 
-    if result is None:
-        await raw_msg.answer("Не удалось выполнить действие. Попробуйте позже.")
-        return
+        if result is None:
+            await raw_msg.answer("Не удалось выполнить действие. Попробуйте позже.")
+            return
 
-    await send_result(raw_msg, result)
+        await send_result(raw_msg, result)
 
 
 @actions_router.callback_query(F.data == _CB_SUMMARIZE)
