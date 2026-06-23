@@ -139,14 +139,18 @@ def _make_message() -> AsyncMock:
 
 @pytest.mark.asyncio
 async def test_send_result_short_single_answer():
-    """Короткий текст — ровно один message.answer, без answer_document и без asyncio.sleep."""
+    """Короткий текст — ровно один message.answer (HTML), без answer_document и без asyncio.sleep."""
+    from aiogram.enums import ParseMode
+
     message = _make_message()
     text = "Короткий ответ."
 
     with patch("services.reply.asyncio.sleep", new=AsyncMock()) as mock_sleep:
         await send_result(message, text)
 
-    message.answer.assert_awaited_once_with(text, reply_markup=None)
+    message.answer.assert_awaited_once_with(
+        text, reply_markup=None, parse_mode=ParseMode.HTML
+    )
     message.answer_document.assert_not_awaited()
     mock_sleep.assert_not_awaited()
 
@@ -294,14 +298,53 @@ async def test_send_result_very_long_no_markup():
 
 
 @pytest.mark.asyncio
-async def test_send_result_no_markup_arg_behaves_as_before():
-    """Вызов без reply_markup (дефолт None) — поведение идентично предыдущей версии."""
+async def test_send_result_no_markup_arg_defaults_to_none_html():
+    """Вызов без reply_markup (дефолт None): один answer с reply_markup=None и parse_mode=HTML."""
+    from aiogram.enums import ParseMode
+
     message = _make_message()
 
     with patch("services.reply.asyncio.sleep", new=AsyncMock()):
         await send_result(message, "Короткий текст")
 
-    message.answer.assert_awaited_once_with("Короткий текст", reply_markup=None)
+    message.answer.assert_awaited_once_with(
+        "Короткий текст", reply_markup=None, parse_mode=ParseMode.HTML
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_result_converts_markdown_to_html():
+    """Markdown (## заголовок, **жирный**, список) конвертируется в Telegram-HTML."""
+    message = _make_message()
+    text = "## Итог\n- **раз**\n- два"
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        await send_result(message, text)
+
+    sent = message.answer.await_args.args[0]
+    assert "<b>Итог</b>" in sent
+    assert "<b>раз</b>" in sent
+    assert "• два" in sent
+    assert "##" not in sent
+    assert "**" not in sent
+
+
+@pytest.mark.asyncio
+async def test_send_result_falls_back_to_plain_on_bad_request():
+    """TelegramBadRequest (невалидная разметка) → повторная отправка plain-текстом."""
+    from aiogram.exceptions import TelegramBadRequest
+
+    message = _make_message()
+    message.answer = AsyncMock(side_effect=[TelegramBadRequest(method=MagicMock(), message="bad"), AsyncMock()])
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        await send_result(message, "## Текст")
+
+    assert message.answer.await_count == 2
+    # второй вызов — без parse_mode, plain исходный текст
+    fallback_kwargs = message.answer.await_args.kwargs
+    assert "parse_mode" not in fallback_kwargs
+    assert message.answer.await_args.args[0] == "## Текст"
 
 
 # ---------------------------------------------------------------------------

@@ -1,10 +1,13 @@
 import asyncio
 import re
 
+from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message
 
 from config import config
 from services.bot_identity import get_bot_username
+from services.telegram_format import to_telegram_html
 
 TELEGRAM_LIMIT = 4096
 MAX_MESSAGE_LEN = 4000
@@ -78,7 +81,15 @@ async def send_result(
             signature = "\n\n— @" + bot_username
             if len(text) + len(signature) <= MAX_MESSAGE_LEN:
                 text = text + signature
-        sent: Message = await message.answer(text, reply_markup=reply_markup)
+        try:
+            sent: Message = await message.answer(
+                to_telegram_html(text),
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML,
+            )
+        except TelegramBadRequest:
+            # Невалидная разметка (несбалансированные теги и т. п.) — шлём как есть.
+            sent = await message.answer(text, reply_markup=reply_markup)
         return sent
 
     parts = split_text(text)
