@@ -19,10 +19,10 @@ def mock_chat_action_sender():
 @pytest.fixture(autouse=True)
 def clear_cache():
     cache_mod._cache.clear()
-    cache_mod._ts_cache.clear()
+    cache_mod._seg_cache.clear()
     yield
     cache_mod._cache.clear()
-    cache_mod._ts_cache.clear()
+    cache_mod._seg_cache.clear()
 
 
 def _make_callback(message_id: int = 100) -> MagicMock:
@@ -73,25 +73,28 @@ def test_actions_keyboard_non_progressive_has_three_buttons():
     assert buttons[0].callback_data == "act:sum"
 
 
-def test_actions_keyboard_timestamps_button_optional():
-    """with_timestamps=True добавляет act:ts; по умолчанию его нет."""
-    assert "act:ts" not in {
+def test_actions_keyboard_extras_buttons_optional():
+    """with_extras=True добавляет act:ts и act:srt; по умолчанию их нет."""
+    default_values = {
         btn.callback_data for row in actions_keyboard(True).inline_keyboard for btn in row
     }
+    assert "act:ts" not in default_values
+    assert "act:srt" not in default_values
     for progressive in (True, False):
         data_values = {
             btn.callback_data
-            for row in actions_keyboard(progressive, with_timestamps=True).inline_keyboard
+            for row in actions_keyboard(progressive, with_extras=True).inline_keyboard
             for btn in row
         }
         assert "act:ts" in data_values
+        assert "act:srt" in data_values
 
 
 def test_actions_keyboard_callback_data_within_64_bytes():
     """callback_data кнопок ≤ 64 байт во всех режимах."""
     for progressive in (True, False):
-        for with_ts in (True, False):
-            kb = actions_keyboard(progressive, with_timestamps=with_ts)
+        for with_extras in (True, False):
+            kb = actions_keyboard(progressive, with_extras=with_extras)
             for row in kb.inline_keyboard:
                 for btn in row:
                     assert btn.callback_data is not None
@@ -438,28 +441,28 @@ async def test_handle_tasks_none_result_sends_service_message():
 
 
 # ---------------------------------------------------------------------------
-# act:ts — тайм-коды (источник — отдельный кэш, без LLM)
+# act:ts — тайм-коды (источник — кэш сегментов, формат на клике, без LLM)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_handle_timestamps_cache_hit_sends_result():
-    """act:ts при наличии тайм-кодов → send_result с текстом тайм-кодов."""
+async def test_handle_timestamps_cache_hit_sends_formatted():
+    """act:ts при наличии сегментов → send_result с отформатированными тайм-кодами."""
     from handlers.actions import handle_timestamps
 
     callback = _make_callback(message_id=800)
-    cache_mod.put_timestamps(12345, 800, "[00:00] привет\n[00:05] пока")
+    cache_mod.put_segments(12345, 800, [[0.0, 2.0, "привет"], [65.0, 67.0, "пока"]])
 
     with patch("handlers.actions.send_result", new=AsyncMock()) as mock_send:
         await handle_timestamps(callback)
 
     mock_send.assert_awaited_once()
-    assert mock_send.await_args[0][1] == "[00:00] привет\n[00:05] пока"
+    assert mock_send.await_args[0][1] == "[00:00] привет\n[01:05] пока"
 
 
 @pytest.mark.asyncio
 async def test_handle_timestamps_cache_miss_alert():
-    """act:ts при отсутствии тайм-кодов → alert, send_result не вызывается."""
+    """act:ts при отсутствии сегментов → alert, send_result не вызывается."""
     from handlers.actions import handle_timestamps
 
     callback = _make_callback(message_id=801)
@@ -468,6 +471,44 @@ async def test_handle_timestamps_cache_miss_alert():
         await handle_timestamps(callback)
 
     mock_send.assert_not_awaited()
+    calls = callback.answer.await_args_list
+    alert_calls = [c for c in calls if c[1].get("show_alert") is True]
+    assert len(alert_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# act:srt — субтитры файлом (источник — кэш сегментов, без LLM)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_srt_cache_hit_sends_document():
+    """act:srt при наличии сегментов → answer_document с .srt."""
+    from handlers.actions import handle_srt
+
+    callback = _make_callback(message_id=810)
+    callback.message.answer_document = AsyncMock()
+    cache_mod.put_segments(12345, 810, [[0.0, 2.0, "привет"], [2.0, 4.0, "пока"]])
+
+    await handle_srt(callback)
+
+    callback.message.answer_document.assert_awaited_once()
+    doc = callback.message.answer_document.await_args[0][0]
+    assert doc.filename.endswith(".srt")
+    assert b"-->" in doc.data
+
+
+@pytest.mark.asyncio
+async def test_handle_srt_cache_miss_alert():
+    """act:srt при отсутствии сегментов → alert, документ не отправляется."""
+    from handlers.actions import handle_srt
+
+    callback = _make_callback(message_id=811)
+    callback.message.answer_document = AsyncMock()
+
+    await handle_srt(callback)
+
+    callback.message.answer_document.assert_not_awaited()
     calls = callback.answer.await_args_list
     alert_calls = [c for c in calls if c[1].get("show_alert") is True]
     assert len(alert_calls) >= 1

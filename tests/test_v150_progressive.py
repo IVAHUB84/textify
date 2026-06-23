@@ -9,10 +9,10 @@ import services.result_cache as cache_mod
 @pytest.fixture(autouse=True)
 def clear_cache():
     cache_mod._cache.clear()
-    cache_mod._ts_cache.clear()
+    cache_mod._seg_cache.clear()
     yield
     cache_mod._cache.clear()
-    cache_mod._ts_cache.clear()
+    cache_mod._seg_cache.clear()
 
 
 def _make_sender_mock() -> MagicMock:
@@ -79,8 +79,8 @@ async def test_audio_progressive_sends_preview_with_two_buttons():
 
 
 @pytest.mark.asyncio
-async def test_audio_long_adds_timestamps_button_and_caches():
-    """Длинное аудио (есть сегменты > порога) → кнопка act:ts + put_timestamps."""
+async def test_audio_long_adds_extras_buttons_and_caches_segments():
+    """Длинное аудио (есть сегменты > порога) → кнопки act:ts/act:srt + put_segments."""
     from handlers.audio import process_audio
 
     message = _make_message()
@@ -98,8 +98,9 @@ async def test_audio_long_adds_timestamps_button_and_caches():
     kwargs = message.answer.await_args[1]
     data_values = {btn.callback_data for row in kwargs["reply_markup"].inline_keyboard for btn in row}
     assert "act:ts" in data_values
+    assert "act:srt" in data_values
     sent_id = message.answer.return_value.message_id
-    assert cache_mod.get_timestamps(_CHAT_ID, sent_id) == "[00:00] начало\n[01:01] конец"
+    assert cache_mod.get_segments(_CHAT_ID, sent_id) == segments
 
 
 @pytest.mark.asyncio

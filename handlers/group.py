@@ -8,6 +8,7 @@ from aiogram.types import Audio, CallbackQuery, Document, InaccessibleMessage, I
 from config import config
 from handlers.audio import process_audio
 from handlers.image import process_image_document, process_photo
+from handlers.limits import OVERSIZED_MESSAGE, is_oversized
 from services.bot_identity import get_bot_username, set_bot_username  # noqa: F401 (re-exported for tests)
 
 group_router = Router()
@@ -108,6 +109,9 @@ async def _dispatch_media(reply: Message, bot: Bot) -> None:
         audio_attachment = reply.document
 
     if audio_attachment:
+        if is_oversized(audio_attachment.file_size):
+            await reply.answer(OVERSIZED_MESSAGE)
+            return
         buffer = BytesIO()
         await bot.download(audio_attachment, destination=buffer)
         await process_audio(reply, reply, bot, buffer.getvalue(), force_local=force_local)

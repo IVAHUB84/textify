@@ -2,7 +2,13 @@ from collections.abc import Awaitable, Callable
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatAction
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from aiogram.utils.chat_action import ChatActionSender
 
 from services import result_cache
@@ -10,6 +16,7 @@ from services.llm import BUDGET_EXCEEDED, extract_tasks, summarize, translate
 from services.reply import send_result
 from services.sentinel import _BudgetExceededType
 from services.structure import structure_text
+from services.transcribe import format_srt, format_timestamps
 
 actions_router = Router()
 
@@ -18,11 +25,12 @@ _CB_FULL = "act:full"
 _CB_TRANSLATE = "act:tr"
 _CB_TASKS = "act:task"
 _CB_TIMESTAMPS = "act:ts"
+_CB_SRT = "act:srt"
 
 _LLMAction = Callable[[str], Awaitable["str | None | _BudgetExceededType"]]
 
 
-def actions_keyboard(progressive: bool = False, with_timestamps: bool = False) -> InlineKeyboardMarkup:
+def actions_keyboard(progressive: bool = False, with_extras: bool = False) -> InlineKeyboardMarkup:
     if progressive:
         rows = [
             [
@@ -44,8 +52,13 @@ def actions_keyboard(progressive: bool = False, with_timestamps: bool = False) -
                 InlineKeyboardButton(text="Задачи", callback_data=_CB_TASKS),
             ],
         ]
-    if with_timestamps:
-        rows.append([InlineKeyboardButton(text="⏱ Тайм-коды", callback_data=_CB_TIMESTAMPS)])
+    if with_extras:
+        rows.append(
+            [
+                InlineKeyboardButton(text="⏱ Тайм-коды", callback_data=_CB_TIMESTAMPS),
+                InlineKeyboardButton(text="Субтитры", callback_data=_CB_SRT),
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -130,9 +143,34 @@ async def handle_timestamps(callback: CallbackQuery) -> None:
         await callback.answer("Текст недоступен", show_alert=True)
         return
 
-    ts_text = result_cache.get_timestamps(raw_msg.chat.id, raw_msg.message_id)
-    if ts_text is None:
+    segments = result_cache.get_segments(raw_msg.chat.id, raw_msg.message_id)
+    if not segments:
         await callback.answer("Тайм-коды недоступны", show_alert=True)
         return
 
-    await send_result(raw_msg, ts_text)
+    await send_result(raw_msg, format_timestamps(segments))
+
+
+@actions_router.callback_query(F.data == _CB_SRT)
+async def handle_srt(callback: CallbackQuery) -> None:
+    await callback.answer("Готовлю…")
+
+    raw_msg = _cached_message(callback)
+    if raw_msg is None:
+        await callback.answer("Текст недоступен", show_alert=True)
+        return
+
+    segments = result_cache.get_segments(raw_msg.chat.id, raw_msg.message_id)
+    if not segments:
+        await callback.answer("Субтитры недоступны", show_alert=True)
+        return
+
+    srt = format_srt(segments)
+    if not srt.strip():
+        await callback.answer("Субтитры недоступны", show_alert=True)
+        return
+
+    await raw_msg.answer_document(
+        BufferedInputFile(srt.encode("utf-8"), filename="subtitles.srt"),
+        caption="Субтитры в формате .srt",
+    )

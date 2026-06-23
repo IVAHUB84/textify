@@ -3,12 +3,12 @@ import time
 import pytest
 
 import services.result_cache as cache_mod
-from services.result_cache import get, get_timestamps, put, put_timestamps
+from services.result_cache import get, get_segments, put, put_segments
 
 
 def _clear_cache():
     cache_mod._cache.clear()
-    cache_mod._ts_cache.clear()
+    cache_mod._seg_cache.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -100,18 +100,19 @@ def test_lazy_eviction_removes_expired_on_put():
     assert get(1, 3) == "новый"
 
 
-def test_timestamps_round_trip():
-    put_timestamps(1, 1, "[00:00] привет")
-    assert get_timestamps(1, 1) == "[00:00] привет"
+def test_segments_round_trip():
+    segs = [[0.0, 2.0, "привет"], [2.0, 4.0, "пока"]]
+    put_segments(1, 1, segs)
+    assert get_segments(1, 1) == segs
 
 
-def test_timestamps_cache_independent_from_text_cache():
-    """put в текстовый кэш не пишет в кэш тайм-кодов и наоборот."""
+def test_segments_cache_independent_from_text_cache():
+    """put в текстовый кэш не пишет в кэш сегментов и наоборот."""
     put(1, 1, "текст")
-    put_timestamps(1, 1, "[00:00] тайм-код")
+    put_segments(1, 1, [[0.0, 1.0, "сегмент"]])
     assert get(1, 1) == "текст"
-    assert get_timestamps(1, 1) == "[00:00] тайм-код"
-    assert get_timestamps(2, 2) is None
+    assert get_segments(1, 1) == [[0.0, 1.0, "сегмент"]]
+    assert get_segments(2, 2) is None
 
 
 def test_lazy_eviction_stops_at_first_live_entry():
@@ -126,3 +127,30 @@ def test_lazy_eviction_stops_at_first_live_entry():
     assert (1, 1) not in cache_mod._cache
     assert (1, 2) in cache_mod._cache
     assert (1, 3) in cache_mod._cache
+
+
+def test_persistence_survives_restart(tmp_path):
+    """init_result_cache + put → после очистки памяти и повторного init данные восстановлены."""
+    db = str(tmp_path / "results.db")
+    saved = cache_mod._DB_PATH
+    try:
+        cache_mod.init_result_cache(db)
+        put(7, 8, "переживший текст")
+        put_segments(7, 8, [[0.0, 1.5, "сегмент"]])
+
+        # Симулируем рестарт процесса: память пуста, на диске — данные.
+        cache_mod._cache.clear()
+        cache_mod._seg_cache.clear()
+        cache_mod.init_result_cache(db)
+
+        assert get(7, 8) == "переживший текст"
+        assert get_segments(7, 8) == [[0.0, 1.5, "сегмент"]]
+    finally:
+        cache_mod._DB_PATH = saved
+
+
+def test_persistence_disabled_by_default_no_write(tmp_path):
+    """Без init_result_cache put не пишет на диск (чистый in-memory)."""
+    assert cache_mod._DB_PATH is None
+    put(1, 1, "только в памяти")
+    assert not (tmp_path / "results.db").exists()

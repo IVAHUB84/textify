@@ -419,6 +419,20 @@ def test_segments_duration_returns_last_end():
     assert svc.segments_duration([]) == 0.0
 
 
+def test_format_srt_builds_numbered_blocks():
+    out = svc.format_srt([(0.0, 2.5, " привет"), (2.5, 5.0, "пока")])
+    assert out == (
+        "1\n00:00:00,000 --> 00:00:02,500\nпривет\n\n"
+        "2\n00:00:02,500 --> 00:00:05,000\nпока"
+    )
+
+
+def test_format_srt_skips_empty_and_fixes_zero_duration():
+    out = svc.format_srt([(0.0, 1.0, "  "), (10.0, 10.0, "реплика")])
+    # Пустой сегмент пропущен; нулевая длительность расширена на 2 c.
+    assert out == "1\n00:00:10,000 --> 00:00:12,000\nреплика"
+
+
 @pytest.mark.asyncio
 async def test_transcribe_with_timestamps_local_returns_segments(monkeypatch):
     """Локальный путь: возвращает (текст, сегменты со start/end)."""

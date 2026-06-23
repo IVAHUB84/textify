@@ -6,6 +6,7 @@ from aiogram.types import Message
 from aiogram.utils.chat_action import ChatActionSender
 
 from handlers.actions import actions_keyboard
+from handlers.limits import OVERSIZED_MESSAGE, is_oversized
 from services import result_cache
 from services.llm import BUDGET_EXCEEDED, summarize_gist
 from services.ocr import recognize_text
@@ -33,6 +34,9 @@ async def process_photo(
 ) -> None:
     assert media_message.photo is not None
     photo = media_message.photo[-1]
+    if is_oversized(photo.file_size):
+        await reply_target.answer(OVERSIZED_MESSAGE)
+        return
     buffer = BytesIO()
     await bot.download(photo, destination=buffer)
     async with ChatActionSender(bot=bot, chat_id=reply_target.chat.id, action=ChatAction.UPLOAD_DOCUMENT):
@@ -65,6 +69,9 @@ async def process_image_document(
     progressive: bool = False,
 ) -> None:
     assert media_message.document is not None
+    if is_oversized(media_message.document.file_size):
+        await reply_target.answer(OVERSIZED_MESSAGE)
+        return
     buffer = BytesIO()
     await bot.download(media_message.document, destination=buffer)
     async with ChatActionSender(bot=bot, chat_id=reply_target.chat.id, action=ChatAction.UPLOAD_DOCUMENT):

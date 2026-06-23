@@ -170,3 +170,25 @@ def format_timestamps(segments: list[Segment]) -> str:
         if clean:
             lines.append(f"[{_format_ts(start)}] {clean}")
     return "\n".join(lines)
+
+
+def _srt_ts(seconds: float) -> str:
+    total_ms = int(round(seconds * 1000))
+    hours, rem = divmod(total_ms, 3_600_000)
+    minutes, rem = divmod(rem, 60_000)
+    secs, ms = divmod(rem, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
+
+
+def format_srt(segments: list[Segment]) -> str:
+    blocks = []
+    index = 1
+    for start, end, text in segments:
+        clean = text.strip()
+        if not clean:
+            continue
+        # Подстраховка от нулевой/обратной длительности — иначе плеер пропустит реплику.
+        safe_end = end if end > start else start + 2.0
+        blocks.append(f"{index}\n{_srt_ts(start)} --> {_srt_ts(safe_end)}\n{clean}")
+        index += 1
+    return "\n\n".join(blocks)

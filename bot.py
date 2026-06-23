@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 
@@ -18,6 +19,7 @@ from middlewares import StatsMiddleware
 from services.bot_identity import set_bot_username
 from services.budget import init_cf_usage_db
 from services.referrals import init_referrals_db
+from services.result_cache import init_result_cache
 from services.stats import init_db
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
@@ -40,6 +42,7 @@ async def main() -> None:
     init_db()
     init_referrals_db()
     init_cf_usage_db()
+    init_result_cache(str(Path(config["STATS_DB_PATH"]).parent / "results.db"))
 
     bot = Bot(token=config["BOT_TOKEN"])
 
