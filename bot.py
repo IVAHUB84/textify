@@ -14,9 +14,10 @@ from handlers import (
     setup_bot_profile,
     text_router,
 )
-from handlers.group import set_bot_username
 from middlewares import StatsMiddleware
+from services.bot_identity import set_bot_username
 from services.budget import init_cf_usage_db
+from services.referrals import init_referrals_db
 from services.stats import init_db
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
@@ -37,6 +38,7 @@ async def main() -> None:
     _setup_logging()
     logging.getLogger(__name__).info("Textify bot starting")
     init_db()
+    init_referrals_db()
     init_cf_usage_db()
 
     bot = Bot(token=config["BOT_TOKEN"])
