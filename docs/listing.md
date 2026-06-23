@@ -12,11 +12,11 @@
 
 ## Короткое описание (RU)
 
-Транскрипция голоса и OCR фото в текст. Перевод RU↔EN. Бесплатно.
+Транскрипция голоса и OCR фото в текст. Бесплатно.
 
 ## Короткое описание (EN)
 
-Voice-to-text transcription and photo OCR. RU↔EN translation. Free.
+Voice-to-text transcription and photo OCR. Free.
 
 ---
 
@@ -28,7 +28,6 @@ Textify превращает голосовые сообщения, аудиоф
 
 - **Голос в текст** — отправьте голосовое сообщение или аудиофайл, получите транскрипцию. Поддерживается русский и английский язык, автоматическое определение языка.
 - **OCR фото** — распознавание текста на изображениях и сканах (RU/EN). Для лучшего качества отправляйте фото как документ.
-- **Перевод RU↔EN** — одной кнопкой переведите результат с русского на английский или наоборот.
 - **Краткий пересказ** — сократите длинный текст до 3–5 ключевых пунктов.
 
 **Особенности:**
@@ -44,7 +43,6 @@ Textify converts voice messages, audio files, and photos into clean structured t
 
 - **Voice to text** — send a voice message or audio file, get an accurate transcription. Supports Russian and English with automatic language detection.
 - **Photo OCR** — extract text from images and scans (RU/EN). For best quality, send photos as documents.
-- **RU↔EN translation** — translate the result with a single button tap.
 - **Summarize** — condense long text into 3–5 key points.
 
 **Highlights:**
