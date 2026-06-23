@@ -2,7 +2,11 @@ import logging
 
 import httpx
 
-from services.structure import MAX_INPUT_CHARS, build_provider
+from services.budget import cf_budget_allow, cf_budget_consume
+from services.sentinel import BUDGET_EXCEEDED, _BudgetExceededType
+from services.structure import MAX_INPUT_CHARS, _CloudflareProvider, build_provider
+
+__all__ = ["BUDGET_EXCEEDED", "summarize", "translate"]
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +46,23 @@ def _target_language(text: str) -> str:
     return "en" if _has_cyrillic(text) else "ru"
 
 
-async def summarize(text: str) -> str | None:
+async def summarize(text: str) -> str | None | _BudgetExceededType:
     provider = build_provider()
     if provider is None:
         logger.warning("LLM provider not configured, summarize unavailable")
         return None
+
+    if isinstance(provider, _CloudflareProvider):
+        if not await cf_budget_allow():
+            logger.warning("CF daily budget exhausted, summarize returning BUDGET_EXCEEDED")
+            return BUDGET_EXCEEDED
+        await cf_budget_consume()
 
     truncated = text[:MAX_INPUT_CHARS]
     messages = [
         {"role": "system", "content": _SUMMARIZE_SYSTEM},
         {"role": "user", "content": _user_message(truncated)},
     ]
-
     try:
         async with httpx.AsyncClient() as client:
             result = await provider.complete(client, messages)
@@ -66,7 +75,7 @@ async def summarize(text: str) -> str | None:
     return None
 
 
-async def translate(text: str) -> str | None:
+async def translate(text: str) -> str | None | _BudgetExceededType:
     provider = build_provider()
     if provider is None:
         logger.warning("LLM provider not configured, translate unavailable")
@@ -76,12 +85,17 @@ async def translate(text: str) -> str | None:
     target_lang_name = "английский" if target == "en" else "русский"
     system = _TRANSLATE_SYSTEM.format(target_lang_name=target_lang_name)
 
+    if isinstance(provider, _CloudflareProvider):
+        if not await cf_budget_allow():
+            logger.warning("CF daily budget exhausted, translate returning BUDGET_EXCEEDED")
+            return BUDGET_EXCEEDED
+        await cf_budget_consume()
+
     truncated = text[:MAX_INPUT_CHARS]
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": _user_message(truncated)},
     ]
-
     try:
         async with httpx.AsyncClient() as client:
             result = await provider.complete(client, messages)

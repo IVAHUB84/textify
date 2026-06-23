@@ -3,7 +3,7 @@ from aiogram.enums import ChatAction
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.chat_action import ChatActionSender
 
-from services.llm import summarize, translate
+from services.llm import BUDGET_EXCEEDED, summarize, translate
 from services.reply import send_result
 
 actions_router = Router()
@@ -38,6 +38,10 @@ async def _handle_action(callback: CallbackQuery, action: str) -> None:
             result = await summarize(text)
         else:
             result = await translate(text)
+
+        if result is BUDGET_EXCEEDED:
+            await raw_msg.answer("Дневной бесплатный лимит исчерпан, попробуйте завтра.")
+            return
 
         if result is None:
             await raw_msg.answer("Не удалось выполнить действие. Попробуйте позже.")

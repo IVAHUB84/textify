@@ -7,6 +7,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_CF_DAILY_BUDGET = 300
+
 
 def load_config() -> dict:
     token = os.environ.get("BOT_TOKEN", "").strip()
@@ -28,10 +30,31 @@ def load_config() -> dict:
 
     stats_db_path = os.environ.get("STATS_DB_PATH", "/app/data/stats.db").strip()
 
+    cf_daily_budget = _DEFAULT_CF_DAILY_BUDGET
+    raw_budget = os.environ.get("CF_DAILY_BUDGET", "").strip()
+    if raw_budget:
+        try:
+            parsed = int(raw_budget)
+            if parsed <= 0:
+                logger.warning(
+                    "CF_DAILY_BUDGET содержит неположительное значение %r — используется дефолт %d.",
+                    raw_budget,
+                    _DEFAULT_CF_DAILY_BUDGET,
+                )
+            else:
+                cf_daily_budget = parsed
+        except ValueError:
+            logger.warning(
+                "CF_DAILY_BUDGET содержит нечисловое значение %r — используется дефолт %d.",
+                raw_budget,
+                _DEFAULT_CF_DAILY_BUDGET,
+            )
+
     return {
         "BOT_TOKEN": token,
         "ADMIN_USER_ID": admin_user_id,
         "STATS_DB_PATH": stats_db_path,
+        "CF_DAILY_BUDGET": cf_daily_budget,
     }
 
 

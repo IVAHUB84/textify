@@ -4,6 +4,8 @@ from typing import Protocol
 
 import httpx
 
+from services.budget import cf_budget_allow, cf_budget_consume
+
 logger = logging.getLogger(__name__)
 
 _MAX_INPUT_CHARS = 8000
@@ -137,8 +139,13 @@ async def structure_text(raw_text: str) -> str:
         logger.warning("LLM provider credentials not configured, falling back to raw text")
         return raw_text
 
-    truncated = raw_text[:_MAX_INPUT_CHARS]
+    if isinstance(provider, _CloudflareProvider):
+        if not await cf_budget_allow():
+            logger.warning("CF daily budget exhausted, degrading structuring to raw text")
+            return raw_text
+        await cf_budget_consume()
 
+    truncated = raw_text[:_MAX_INPUT_CHARS]
     try:
         async with httpx.AsyncClient() as client:
             result = await provider.complete(client, _build_messages(truncated))

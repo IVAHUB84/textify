@@ -9,6 +9,7 @@ import httpx
 from faster_whisper import WhisperModel
 
 from services import HEAVY_LOCAL_SEMAPHORE
+from services.budget import cf_budget_allow, cf_budget_consume
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,14 @@ async def transcribe(audio_bytes: bytes) -> str:
         return await _transcribe_local(audio_bytes)
 
     model = os.environ.get("CF_WHISPER_MODEL", _DEFAULT_CF_WHISPER_MODEL).strip()
+
+    if not await cf_budget_allow():
+        logger.warning(
+            "CF daily budget exhausted, degrading ASR to local transcription"
+        )
+        return await _transcribe_local(audio_bytes)
+
+    await cf_budget_consume()
 
     try:
         return await _transcribe_cloudflare(audio_bytes, account_id, api_token, model)
