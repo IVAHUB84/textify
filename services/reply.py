@@ -3,6 +3,9 @@ import re
 
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message
 
+from config import config
+from services.bot_identity import get_bot_username
+
 TELEGRAM_LIMIT = 4096
 MAX_MESSAGE_LEN = 4000
 MAX_PARTS = 5
@@ -70,6 +73,11 @@ async def send_result(
         return
 
     if len(text) <= MAX_MESSAGE_LEN:
+        bot_username = get_bot_username()
+        if config["ATTRIBUTION_FOOTER"] and bot_username:
+            signature = "\n\n— @" + bot_username
+            if len(text) + len(signature) <= MAX_MESSAGE_LEN:
+                text = text + signature
         await message.answer(text, reply_markup=reply_markup)
         return
 

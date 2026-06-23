@@ -62,12 +62,25 @@ def load_config() -> dict:
             raw_group_asr,
         )
 
+    attribution_footer = True
+    raw_attribution = os.environ.get("ATTRIBUTION_FOOTER", "").strip().lower()
+    if raw_attribution in ("true", "1", "yes"):
+        attribution_footer = True
+    elif raw_attribution in ("false", "0", "no"):
+        attribution_footer = False
+    elif raw_attribution:
+        logger.warning(
+            "ATTRIBUTION_FOOTER содержит некорректное значение %r — используется дефолт True.",
+            raw_attribution,
+        )
+
     return {
         "BOT_TOKEN": token,
         "ADMIN_USER_ID": admin_user_id,
         "STATS_DB_PATH": stats_db_path,
         "CF_DAILY_BUDGET": cf_daily_budget,
         "GROUP_ASR_LOCAL": group_asr_local,
+        "ATTRIBUTION_FOOTER": attribution_footer,
     }
 
 
