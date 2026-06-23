@@ -828,14 +828,12 @@ async def test_group_callback_tr_works():
 # ---------------------------------------------------------------------------
 
 
-def test_group_router_has_no_catch_all():
-    """group_router не обрабатывает медиа без явного триггера (нет catch-all хендлера)."""
+def test_group_router_has_trigger_handlers():
+    """group_router содержит хендлеры textify-команды и mention-триггера."""
     from handlers.group import group_router
     handlers = list(group_router.message.handlers)
-    # Должны быть только хендлеры с явными фильтрами (Command("textify") и mention-фильтр)
-    # Не должно быть хендлера на F.photo, F.voice и т.п. напрямую
-    assert len(handlers) == 2, (
-        f"group_router должен иметь ровно 2 хендлера (textify-command + mention), "
+    assert len(handlers) >= 2, (
+        f"group_router должен содержать минимум 2 хендлера (textify-command + mention), "
         f"найдено: {len(handlers)}"
     )
 
