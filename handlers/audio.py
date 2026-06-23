@@ -22,8 +22,8 @@ router.message.filter(F.chat.type == "private")
 
 NO_SPEECH_MESSAGE = "Речь в аудио не распознана."
 
-_GIST_BUDGET_PREVIEW = "Суть недоступна (дневной лимит). Доступны «Полностью» и «Кратко»."
-_GIST_FAIL_PREVIEW = "Не удалось сформировать суть. Доступны «Полностью» и «Кратко»."
+_GIST_BUDGET_PREVIEW = "Суть недоступна (дневной лимит). Выберите действие на кнопках ниже."
+_GIST_FAIL_PREVIEW = "Не удалось сформировать суть. Выберите действие на кнопках ниже."
 
 
 async def process_audio(
