@@ -92,7 +92,7 @@ def test_text_handler_registered():
 
 @pytest.mark.asyncio
 async def test_start_reply():
-    """Т-4: /start отвечает точным текстом START_TEXT с упоминанием будущих функций."""
+    """Т-4: /start отвечает точным текстом START_TEXT с описанием актуальных функций."""
     message = AsyncMock()
     message.text = "/start"
     from handlers.commands import cmd_start
@@ -100,8 +100,7 @@ async def test_start_reply():
     message.answer.assert_called_once()
     reply = message.answer.call_args[0][0]
     assert reply == START_TEXT
-    assert "следующих" in reply.lower()
-    assert any(word in reply.lower() for word in ("аудио", "изображен", "распознавани"))
+    assert any(word in reply.lower() for word in ("аудио", "изображен", "распозна", "ocr"))
 
 
 @pytest.mark.asyncio
@@ -126,3 +125,23 @@ async def test_text_stub_reply():
     message.answer.assert_called_once()
     reply = message.answer.call_args[0][0]
     assert reply == STUB_TEXT
+
+
+@pytest.mark.asyncio
+async def test_setup_bot_profile():
+    """Профиль бота: задаются меню команд, description и short description."""
+    from handlers.commands import (
+        BOT_COMMANDS,
+        BOT_DESCRIPTION,
+        BOT_SHORT_DESCRIPTION,
+        setup_bot_profile,
+    )
+
+    assert len(BOT_DESCRIPTION) <= 512
+    assert len(BOT_SHORT_DESCRIPTION) <= 120
+
+    bot = AsyncMock()
+    await setup_bot_profile(bot)
+    bot.set_my_commands.assert_awaited_once_with(BOT_COMMANDS)
+    bot.set_my_description.assert_awaited_once_with(BOT_DESCRIPTION)
+    bot.set_my_short_description.assert_awaited_once_with(BOT_SHORT_DESCRIPTION)

@@ -10,14 +10,26 @@ from handlers.actions import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_chat_action_sender():
+    sender = MagicMock()
+    sender.__aenter__ = AsyncMock(return_value=None)
+    sender.__aexit__ = AsyncMock(return_value=False)
+    with patch("handlers.actions.ChatActionSender", return_value=sender):
+        yield sender
+
+
 def _make_callback(text: str | None = "Распознанный текст") -> MagicMock:
     from aiogram.types import Message
 
     callback = MagicMock()
     callback.answer = AsyncMock()
+    callback.bot = AsyncMock()
     callback.message = MagicMock(spec=Message)
     callback.message.text = text
     callback.message.answer = AsyncMock()
+    callback.message.chat = MagicMock()
+    callback.message.chat.id = 12345
     return callback
 
 
@@ -25,6 +37,7 @@ def _make_callback_inaccessible() -> MagicMock:
     """callback.message не является Message (InaccessibleMessage или None)."""
     callback = MagicMock()
     callback.answer = AsyncMock()
+    callback.bot = AsyncMock()
     callback.message = MagicMock()  # без spec=Message — не пройдёт isinstance
     callback.message.text = "какой-то текст"
     callback.message.answer = AsyncMock()

@@ -1,5 +1,5 @@
 """Тесты services/reply.py: split_text и send_result."""
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -324,7 +324,12 @@ async def test_no_text_message_via_direct_answer():
 
     bot.download = fake_download
 
+    sender_mock = MagicMock()
+    sender_mock.__aenter__ = AsyncMock(return_value=None)
+    sender_mock.__aexit__ = AsyncMock(return_value=False)
+
     with (
+        patch("handlers.image.ChatActionSender", return_value=sender_mock),
         patch("handlers.image.recognize_text", new=AsyncMock(return_value="")),
         patch("handlers.image.structure_text", new=AsyncMock()),
         patch("handlers.image.send_result", new=AsyncMock()) as mock_send,
@@ -349,7 +354,12 @@ async def test_no_speech_message_via_direct_answer():
 
     bot.download = fake_download
 
+    sender_mock = MagicMock()
+    sender_mock.__aenter__ = AsyncMock(return_value=None)
+    sender_mock.__aexit__ = AsyncMock(return_value=False)
+
     with (
+        patch("handlers.audio.ChatActionSender", return_value=sender_mock),
         patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
         patch("handlers.audio.structure_text", new=AsyncMock()),
         patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,

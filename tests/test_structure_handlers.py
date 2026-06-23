@@ -1,5 +1,5 @@
 """Тесты интеграции structure_text в хендлеры изображений и аудио."""
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiogram.types import InlineKeyboardMarkup
@@ -12,6 +12,23 @@ def _make_message() -> AsyncMock:
     msg = AsyncMock()
     msg.answer = AsyncMock()
     return msg
+
+
+def _make_sender_mock() -> MagicMock:
+    sender = MagicMock()
+    sender.__aenter__ = AsyncMock(return_value=None)
+    sender.__aexit__ = AsyncMock(return_value=False)
+    return sender
+
+
+@pytest.fixture(autouse=True)
+def mock_chat_action_sender():
+    sender = _make_sender_mock()
+    with (
+        patch("handlers.image.ChatActionSender", return_value=sender),
+        patch("handlers.audio.ChatActionSender", return_value=sender),
+    ):
+        yield sender
 
 
 def _make_bot_with_download(content: bytes = b"fake") -> AsyncMock:
