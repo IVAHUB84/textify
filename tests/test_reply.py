@@ -2,6 +2,7 @@
 from unittest.mock import AsyncMock, call, patch
 
 import pytest
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from services.reply import (
     MAX_MESSAGE_LEN,
@@ -145,7 +146,7 @@ async def test_send_result_short_single_answer():
     with patch("services.reply.asyncio.sleep", new=AsyncMock()) as mock_sleep:
         await send_result(message, text)
 
-    message.answer.assert_awaited_once_with(text)
+    message.answer.assert_awaited_once_with(text, reply_markup=None)
     message.answer_document.assert_not_awaited()
     mock_sleep.assert_not_awaited()
 
@@ -227,6 +228,80 @@ async def test_send_result_whitespace_text_no_calls():
     await send_result(message, "   \n\t  ")
     message.answer.assert_not_awaited()
     message.answer_document.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# reply_markup: только при одиночном сообщении
+# ---------------------------------------------------------------------------
+
+
+def _make_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Кратко", callback_data="act:sum")]
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_result_short_passes_markup_to_answer():
+    """Короткий текст + reply_markup → message.answer получает reply_markup."""
+    message = _make_message()
+    markup = _make_markup()
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        await send_result(message, "Короткий текст", reply_markup=markup)
+
+    message.answer.assert_awaited_once()
+    kwargs = message.answer.await_args.kwargs
+    assert kwargs.get("reply_markup") is markup
+
+
+@pytest.mark.asyncio
+async def test_send_result_series_no_markup():
+    """Длинный текст (серия) + reply_markup → части отправляются без markup."""
+    message = _make_message()
+    markup = _make_markup()
+    paragraph = "Слово другое предложение здесь.\n\n"
+    text = paragraph * 150
+    parts = split_text(text)
+    assert 1 < len(parts) <= MAX_PARTS
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        await send_result(message, text, reply_markup=markup)
+
+    for c in message.answer.await_args_list:
+        kwargs = c.kwargs
+        assert kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_send_result_very_long_no_markup():
+    """Очень длинный текст (файл) + reply_markup → answer_document без markup."""
+    message = _make_message()
+    markup = _make_markup()
+    paragraph = "Длинный абзац текста для теста разбивки.\n\n"
+    text = paragraph * 1000
+    parts = split_text(text)
+    assert len(parts) > MAX_PARTS
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        await send_result(message, text, reply_markup=markup)
+
+    message.answer_document.assert_awaited_once()
+    doc_kwargs = message.answer_document.await_args.kwargs
+    assert doc_kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_send_result_no_markup_arg_behaves_as_before():
+    """Вызов без reply_markup (дефолт None) — поведение идентично предыдущей версии."""
+    message = _make_message()
+
+    with patch("services.reply.asyncio.sleep", new=AsyncMock()):
+        await send_result(message, "Короткий текст")
+
+    message.answer.assert_awaited_once_with("Короткий текст", reply_markup=None)
 
 
 # ---------------------------------------------------------------------------

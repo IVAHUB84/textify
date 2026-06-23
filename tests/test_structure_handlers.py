@@ -2,6 +2,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from aiogram.types import InlineKeyboardMarkup
 
 from handlers.image import NO_TEXT_MESSAGE, handle_photo, handle_image_document
 from handlers.audio import NO_SPEECH_MESSAGE, handle_voice, handle_audio, handle_audio_document
@@ -43,7 +44,10 @@ async def test_handle_photo_calls_structure_text_on_nonempty_ocr():
         await handle_photo(message, bot)
 
     mock_struct.assert_awaited_once_with("raw ocr")
-    mock_send.assert_awaited_once_with(message, "## structured")
+    mock_send.assert_awaited_once()
+    args, kwargs = mock_send.await_args
+    assert args == (message, "## structured")
+    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
 
 
 @pytest.mark.asyncio
@@ -80,7 +84,10 @@ async def test_handle_image_document_calls_structure_text_on_nonempty_ocr():
         await handle_image_document(message, bot)
 
     mock_struct.assert_awaited_once_with("raw ocr doc")
-    mock_send.assert_awaited_once_with(message, "## doc structured")
+    mock_send.assert_awaited_once()
+    args, kwargs = mock_send.await_args
+    assert args == (message, "## doc structured")
+    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
 
 
 @pytest.mark.asyncio
@@ -132,7 +139,10 @@ async def test_handle_voice_calls_structure_text_on_nonempty_transcript():
         await handle_voice(message, bot)
 
     mock_struct.assert_awaited_once_with("voice transcript")
-    mock_send.assert_awaited_once_with(message, "## voice structured")
+    mock_send.assert_awaited_once()
+    args, kwargs = mock_send.await_args
+    assert args == (message, "## voice structured")
+    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
 
 
 @pytest.mark.asyncio
@@ -169,7 +179,10 @@ async def test_handle_audio_calls_structure_text_on_nonempty_transcript():
         await handle_audio(message, bot)
 
     mock_struct.assert_awaited_once_with("audio text")
-    mock_send.assert_awaited_once_with(message, "## audio ok")
+    mock_send.assert_awaited_once()
+    args, kwargs = mock_send.await_args
+    assert args == (message, "## audio ok")
+    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
 
 
 @pytest.mark.asyncio
@@ -206,7 +219,10 @@ async def test_handle_audio_document_calls_structure_text_on_nonempty_transcript
         await handle_audio_document(message, bot)
 
     mock_struct.assert_awaited_once_with("doc audio text")
-    mock_send.assert_awaited_once_with(message, "## doc ok")
+    mock_send.assert_awaited_once()
+    args, kwargs = mock_send.await_args
+    assert args == (message, "## doc ok")
+    assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
 
 
 @pytest.mark.asyncio
