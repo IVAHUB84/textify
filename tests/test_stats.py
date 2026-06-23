@@ -315,8 +315,16 @@ async def test_stats_admin_gets_report(stats_module):
 
     fake_config = {"BOT_TOKEN": "x", "ADMIN_USER_ID": 42, "STATS_DB_PATH": stats_module.config["STATS_DB_PATH"]}
 
+    async def _fake_total():
+        return 0
+
+    async def _fake_top(limit):
+        return []
+
     with patch("handlers.commands.config", fake_config), \
-         patch("handlers.commands.get_stats", stats_module.get_stats):
+         patch("handlers.commands.get_stats", stats_module.get_stats), \
+         patch("handlers.commands.total_referrals", _fake_total), \
+         patch("handlers.commands.top_referrers", _fake_top):
         from handlers.commands import cmd_stats
         await cmd_stats(message)
 

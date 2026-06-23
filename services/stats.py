@@ -55,30 +55,33 @@ def init_db() -> None:
         con.close()
 
 
-def _record_message_sync(user_id: int, msg_type: str) -> None:
+def _record_message_sync(user_id: int, msg_type: str) -> bool:
     column = _COLUMN_MAP.get(msg_type, "other_count")
     now = datetime.now(timezone.utc).isoformat()
     db_path = config["STATS_DB_PATH"]
     con = sqlite3.connect(db_path)
     try:
         con.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
-        con.execute(
-            f"""
-            INSERT INTO user_stats (user_id, first_seen, last_seen, {column})
-            VALUES (?, ?, ?, 1)
-            ON CONFLICT(user_id) DO UPDATE SET
-                last_seen = excluded.last_seen,
-                {column} = {column} + 1
-            """,
+        # INSERT OR IGNORE: rowcount=1 — новая строка (первое обращение),
+        # rowcount=0 — строка уже существует (повторное обращение).
+        insert_cursor = con.execute(
+            "INSERT OR IGNORE INTO user_stats (user_id, first_seen, last_seen) VALUES (?, ?, ?)",
             (user_id, now, now),
         )
+        is_new = insert_cursor.rowcount == 1
+        # Обновляем счётчик и last_seen в любом случае.
+        con.execute(
+            f"UPDATE user_stats SET last_seen = ?, {column} = {column} + 1 WHERE user_id = ?",
+            (now, user_id),
+        )
         con.commit()
+        return is_new
     finally:
         con.close()
 
 
-async def record_message(user_id: int, msg_type: str) -> None:
-    await asyncio.to_thread(_record_message_sync, user_id, msg_type)
+async def record_message(user_id: int, msg_type: str) -> bool:
+    return await asyncio.to_thread(_record_message_sync, user_id, msg_type)
 
 
 def _get_stats_sync() -> StatsResult:

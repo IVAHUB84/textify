@@ -38,7 +38,8 @@ class StatsMiddleware(BaseMiddleware):
             user_id = event.from_user.id
             msg_type = classify_message(event)
             try:
-                await record_message(user_id, msg_type)
+                data["is_new_user"] = await record_message(user_id, msg_type)
             except Exception:
                 logger.exception("Ошибка записи статистики для user_id=%d", user_id)
+                data["is_new_user"] = False
         return await handler(event, data)
