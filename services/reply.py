@@ -1,7 +1,7 @@
 import asyncio
 import re
 
-from aiogram.types import BufferedInputFile, Message
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message
 
 TELEGRAM_LIMIT = 4096
 MAX_MESSAGE_LEN = 4000
@@ -61,12 +61,16 @@ def _find_sentence_end(chunk: str) -> int:
     return last_end
 
 
-async def send_result(message: Message, text: str) -> None:
+async def send_result(
+    message: Message,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
     if not text or not text.strip():
         return
 
     if len(text) <= MAX_MESSAGE_LEN:
-        await message.answer(text)
+        await message.answer(text, reply_markup=reply_markup)
         return
 
     parts = split_text(text)
