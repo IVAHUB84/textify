@@ -3,6 +3,7 @@ from io import BytesIO
 from aiogram import Bot, F, Router
 from aiogram.types import Message
 
+from handlers.actions import actions_keyboard
 from services.reply import send_result
 from services.structure import structure_text
 from services.transcribe import transcribe
@@ -15,7 +16,7 @@ NO_SPEECH_MESSAGE = "Речь в аудио не распознана."
 async def _handle_audio_bytes(message: Message, audio_bytes: bytes) -> None:
     text = await transcribe(audio_bytes)
     if text.strip():
-        await send_result(message, await structure_text(text))
+        await send_result(message, await structure_text(text), reply_markup=actions_keyboard())
     else:
         await message.answer(NO_SPEECH_MESSAGE)
 

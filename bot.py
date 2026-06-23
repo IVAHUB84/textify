@@ -3,7 +3,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 
 from config import config
-from handlers import audio_router, commands_router, image_router, text_router
+from handlers import actions_router, audio_router, commands_router, image_router, text_router
 from middlewares import StatsMiddleware
 from services.stats import init_db
 
@@ -20,6 +20,7 @@ async def main() -> None:
     dp.include_router(image_router)
     dp.include_router(audio_router)
     dp.include_router(text_router)
+    dp.include_router(actions_router)
 
     await dp.start_polling(bot)
 
