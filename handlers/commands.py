@@ -3,7 +3,7 @@ import urllib.parse
 
 from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import config
 from services.bot_identity import get_bot_username
@@ -39,15 +39,9 @@ BOT_SHORT_DESCRIPTION = (
     "Транскрипция голоса и OCR фото в текст. Перевод RU↔EN. Бесплатно."
 )
 
-BOT_COMMANDS = [
-    BotCommand(command="start", description="О боте и как пользоваться"),
-    BotCommand(command="help", description="Справка по возможностям"),
-]
-
-
 async def setup_bot_profile(bot: Bot) -> None:
-    """Задаёт меню команд, description и short description в Telegram."""
-    await bot.set_my_commands(BOT_COMMANDS)
+    """Задаёт description и short description; убирает меню команд (кнопку Menu)."""
+    await bot.delete_my_commands()
     await bot.set_my_description(BOT_DESCRIPTION)
     await bot.set_my_short_description(BOT_SHORT_DESCRIPTION)
 

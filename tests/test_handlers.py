@@ -137,9 +137,8 @@ async def test_text_stub_reply():
 
 @pytest.mark.asyncio
 async def test_setup_bot_profile():
-    """Профиль бота: задаются меню команд, description и short description."""
+    """Профиль бота: меню команд удаляется, задаются description и short description."""
     from handlers.commands import (
-        BOT_COMMANDS,
         BOT_DESCRIPTION,
         BOT_SHORT_DESCRIPTION,
         setup_bot_profile,
@@ -150,6 +149,6 @@ async def test_setup_bot_profile():
 
     bot = AsyncMock()
     await setup_bot_profile(bot)
-    bot.set_my_commands.assert_awaited_once_with(BOT_COMMANDS)
+    bot.delete_my_commands.assert_awaited_once_with()
     bot.set_my_description.assert_awaited_once_with(BOT_DESCRIPTION)
     bot.set_my_short_description.assert_awaited_once_with(BOT_SHORT_DESCRIPTION)
