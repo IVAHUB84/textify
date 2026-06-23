@@ -20,6 +20,7 @@ RUN groupadd --gid 10001 appuser \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /bin/false appuser
 
 ENV HF_HOME=/opt/models
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
