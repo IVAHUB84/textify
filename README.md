@@ -2,99 +2,105 @@
 
 Telegram-бот, который **бесплатно** превращает голосовые/аудио и изображения в чистый структурированный текст.
 
-- Аудио → текст: распознавание речи через [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (локально, офлайн).
-- Картинки → текст: OCR через [Tesseract](https://github.com/tesseract-ocr/tesseract) (`pytesseract`).
-- Структурирование: распознанный текст приводится к читаемому виду (заголовки, списки, ключевые пункты) через [Groq](https://groq.com/) free API.
-- Языки контента: **русский + английский** (Whisper определяет язык автоматически, для OCR подключены пакеты `rus` + `eng`).
-
 Бот: [@YourTextifyBot](https://t.me/YourTextifyBot).
 
-## Как это работает
+## Возможности
 
-```
-Telegram (голос / аудио / фото)
-        │
-        ▼
-   aiogram (bot.py)
-        │
-   ┌────┴─────────────┐
-   ▼                  ▼
-audio (faster-whisper)  image (Tesseract OCR)
-   └────┬─────────────┘
-        ▼
-  Groq API — структурирование текста
-        │
-        ▼
-  ответ пользователю (Markdown)
-```
+- **OCR изображений** — Tesseract с предобработкой (выравнивание, бинаризация, deskew) и quality gate; языки rus + eng.
+- **Распознавание аудио** — Cloudflare Whisper `large-v3-turbo` как основной провайдер; локальный faster-whisper как фолбэк при любом сбое облака или при `ASR_PROVIDER=local`.
+- **Структурирование текста** — Cloudflare Workers AI приводит распознанный текст к читаемой структуре (заголовки, списки, ключевые пункты).
+- **Действия над результатом** — inline-кнопки «Кратко» и «Перевести» под одно-сообщенческим результатом.
+- **Статистика** — команда `/stats` для администратора: уникальные пользователи, всего сообщений, разбивка по типам.
 
-## Планируемая структура
+Языки контента: **русский + английский** (Whisper определяет язык автоматически, OCR подключён с пакетами `rus` + `eng`, перевод — ru↔en по наличию кириллицы).
 
-```
-Textify/
-  bot.py                # точка входа, aiogram
-  handlers/
-    audio.py            # голос/аудио -> faster-whisper
-    image.py            # фото -> Tesseract OCR
-  services/
-    transcribe.py       # обёртка над faster-whisper
-    ocr.py              # обёртка над pytesseract
-    structure.py        # Groq API -> структурированный текст
-  requirements.txt
-  .env                  # секреты (НЕ коммитится)
-  .env.example          # шаблон переменных
-```
+## Команды
 
-> Структура актуальна начиная с v0.3.0. Документация workflow и артефакты (`adrs/`, `ba-req/`, `releases/` и т.д.) описаны в [`CLAUDE.md`](./CLAUDE.md).
-
-## Окружение
-
-### Системные зависимости (VPS, Linux)
-
-```bash
-sudo apt update
-sudo apt install -y tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng
-```
-
-Tesseract — для OCR. Декодирование аудио идёт через пакет `av` (транзитивная зависимость faster-whisper), системный `ffmpeg` не требуется.
-
-### Python
-
-```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-### Переменные окружения
-
-Скопировать `.env.example` → `.env` и заполнить:
-
-| Переменная | Назначение |
+| Команда | Описание |
 |---|---|
-| `BOT_TOKEN` | Токен бота от @BotFather |
-| `GROQ_API_KEY` | Ключ Groq free API для структурирования |
+| `/start` | Приветствие и краткое описание бота |
+| `/help` | Справка по возможностям и каналам ввода |
+| `/stats` | Сводка статистики (только для `ADMIN_USER_ID`) |
 
-`.env` покрыт `.gitignore` — секреты в репозиторий не попадают.
+## Переменные окружения
 
-## Запуск
+| Переменная | Обязательность | Дефолт | Назначение |
+|---|---|---|---|
+| `BOT_TOKEN` | обязательна | — | Токен бота от @BotFather |
+| `CF_ACCOUNT_ID` | опциональна | — | ID аккаунта Cloudflare (нужен для CF Workers AI) |
+| `CF_API_TOKEN` | опциональна | — | API-токен Cloudflare |
+| `CF_MODEL` | опциональна | `@cf/meta/llama-3.1-8b-instruct` | Модель CF Workers AI для структурирования |
+| `CF_WHISPER_MODEL` | опциональна | `@cf/openai/whisper-large-v3-turbo` | Модель CF для транскрипции аудио |
+| `LLM_PROVIDER` | опциональна | `cloudflare` | Провайдер LLM: `cloudflare` или `groq` |
+| `ASR_PROVIDER` | опциональна | `cloudflare` | Провайдер ASR: `cloudflare` или `local` |
+| `ADMIN_USER_ID` | опциональна | — | Telegram user_id администратора для `/stats` |
+| `LOG_LEVEL` | опциональна | `INFO` | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `STATS_DB_PATH` | опциональна | `/app/data/stats.db` | Путь к SQLite-базе статистики |
+
+Скопировать `deploy/.env.example` → `deploy/.env` и заполнить. `.env` покрыт `.gitignore` — в репозиторий не попадает.
+
+> Groq (`LLM_PROVIDER=groq`) требует `GROQ_API_KEY`, но **недоступен с российских IP** (гео-блокировка). Дефолтный провайдер — Cloudflare, который работает без ограничений.
+
+## Деплой
+
+Бот развёрнут на **ivahub** (1 vCPU / 1.9 GB RAM, long-polling, Docker).
+
+Образ публикуется в GHCR и деплоится через CI/CD (`push` в `main` → `.github/workflows/deploy.yml`).
+
+Профиль поставки — «бот без HTTP-порта»: нет входящих портов, нет Traefik/edge, только `restart: unless-stopped` и volume данных статистики.
+
+Статистика хранится в SQLite-файле на хосте: `/opt/apps/textify/data` → `/app/data` (bind-mount volume). Значение `STATS_DB_PATH` указывает на этот путь внутри контейнера.
+
+## Особенности
+
+- **Пиннинг Telegram-DC.** На ivahub часть IP Telegram блокируется на сетевом уровне. `docker-compose.yml` прописывает `extra_hosts` с достижимым Telegram-DC, чтобы long-polling работал.
+- **Офлайн-модель Whisper.** Веса faster-whisper (`base`) вшиваются в Docker-образ на этапе сборки (`RUN python -c "from faster_whisper import WhisperModel; ..."`). В рантайме `HF_HUB_OFFLINE=1` и `TRANSFORMERS_OFFLINE=1` блокируют попытки скачивания — модель работает офлайн.
+- **Гео-ограничения Groq.** Groq API недоступен с российских IP (403). Дефолт — Cloudflare Workers AI, который работает с RU-IP без прокси.
+
+## Эксплуатация
+
+### Логи
 
 ```bash
-python bot.py
+docker logs <имя-контейнера> -f
 ```
 
-## Разработка через workflow
-
-Проект использует многоагентный workflow Claude Code (агенты BA → архитектор → разработчик → ревьюер → тестировщик → мейнтейнер → lead). Соглашения, команды (`/ba`, `/adr`, `/implement`, `/review`, `/release`, `/deploy`, `/lead`) и принципы описаны в [`CLAUDE.md`](./CLAUDE.md).
-
-Первый цикл:
+Уровень логирования управляется через `LOG_LEVEL` в `.env` без правки кода и пересборки:
 
 ```
-1. requirements/req-textify-001.md   (описать задачу вручную)
-2. /ba 001
-3. /adr 001 v0.1.0
-4. /implement v0.1.0
-5. /review v0.1.0
-6. /release v0.1.0
-7. /deploy v0.1.0       (после подтверждения)
+LOG_LEVEL=DEBUG   # детальный вывод для диагностики
+LOG_LEVEL=INFO    # стандартный уровень (дефолт)
 ```
+
+### Данные статистики
+
+SQLite-база хранится по пути `STATS_DB_PATH` (дефолт `/app/data/stats.db`), смонтированному из `/opt/apps/textify/data` на хосте. Переживает передеплой при сохранении volume.
+
+### Переключение провайдеров
+
+```
+ASR_PROVIDER=local         # использовать только локальный faster-whisper
+ASR_PROVIDER=cloudflare    # CF Whisper + локальный фолбэк (дефолт)
+
+LLM_PROVIDER=cloudflare    # CF Workers AI (дефолт)
+LLM_PROVIDER=groq          # Groq (требует GROQ_API_KEY, не работает с RU-IP)
+```
+
+## Публичный контракт 1.0.0
+
+С версии 1.0.0 следующий контракт стабилен. Его ломающее изменение = MAJOR.
+
+**Команды:** `/start`, `/help`, `/stats`.
+
+**Входные каналы:**
+- фото (`message.photo`)
+- изображение-документ (MIME `image/*`)
+- голосовое (`message.voice`)
+- аудио (`message.audio`)
+- аудио-документ (MIME `audio/*`)
+
+**Формат ответа:** plain text без `parse_mode`; отдача через `send_result` — одно сообщение / серия по естественным границам / файл `result.txt` при очень длинном результате. При нераспознанном тексте/речи — служебное сообщение. При недоступности LLM — тихий фолбэк на сырой текст.
+
+**Inline-действия** (под одно-сообщенческим результатом):
+- «Кратко» — `callback_data = act:sum`
+- «Перевести» — `callback_data = act:tr`
