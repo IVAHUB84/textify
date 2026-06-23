@@ -4,7 +4,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from unittest.mock import AsyncMock
 
 from handlers import audio_router, commands_router, image_router, text_router
-from handlers.commands import START_TEXT, HELP_TEXT
+from handlers.commands import HELP_TEXT, START_TEXT
 from handlers.text import STUB_TEXT
 
 
@@ -92,14 +92,22 @@ def test_text_handler_registered():
 
 @pytest.mark.asyncio
 async def test_start_reply():
-    """Т-4: /start отвечает точным текстом START_TEXT с описанием актуальных функций."""
+    """Т-4: /start отвечает текстом, содержащим START_TEXT с описанием актуальных функций."""
+    from unittest.mock import MagicMock, patch
     message = AsyncMock()
     message.text = "/start"
+    message.chat = MagicMock()
+    message.chat.type = "private"
+    message.from_user = MagicMock()
+    message.from_user.id = 1
+    command = MagicMock()
+    command.args = None
     from handlers.commands import cmd_start
-    await cmd_start(message)
+    with patch("handlers.commands.count_referrals", return_value=AsyncMock(return_value=0)()):
+        await cmd_start(message, command, is_new_user=False)
     message.answer.assert_called_once()
     reply = message.answer.call_args[0][0]
-    assert reply == START_TEXT
+    assert START_TEXT in reply
     assert any(word in reply.lower() for word in ("аудио", "изображен", "распозна", "ocr"))
 
 

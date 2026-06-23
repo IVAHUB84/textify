@@ -334,7 +334,8 @@ async def test_transcribe_force_local_false_uses_cf(monkeypatch):
 
 def _setup_username(username: str):
     import handlers.group as grp
-    grp.set_bot_username(username)
+    from services.bot_identity import set_bot_username
+    set_bot_username(username)
     return grp
 
 
@@ -372,7 +373,8 @@ def test_mention_filter_no_entities_returns_false():
 def test_mention_filter_no_username_configured():
     """_bot_username не задан → False (защита от хардкода)."""
     import handlers.group as grp
-    grp._bot_username = ""
+    from services.bot_identity import set_bot_username
+    set_bot_username("")
     entity = _make_entity("mention", 0, 12)
     result = grp._is_bot_mention([entity], "@TestifyBot")
     assert result is False
@@ -844,17 +846,17 @@ def test_group_router_has_no_catch_all():
 
 
 def test_set_bot_username_strips_at():
-    """set_bot_username убирает @ и переводит в lower."""
-    import handlers.group as grp
-    grp.set_bot_username("@MyBot")
-    assert grp._bot_username == "mybot"
+    """set_bot_username убирает @ и сохраняет в общем держателе."""
+    from services.bot_identity import get_bot_username, set_bot_username
+    set_bot_username("@MyBot")
+    assert get_bot_username() == "MyBot"
 
 
 def test_set_bot_username_without_at():
     """set_bot_username без @ — тоже работает."""
-    import handlers.group as grp
-    grp.set_bot_username("MyBot")
-    assert grp._bot_username == "mybot"
+    from services.bot_identity import get_bot_username, set_bot_username
+    set_bot_username("MyBot")
+    assert get_bot_username() == "MyBot"
 
 
 # ---------------------------------------------------------------------------
