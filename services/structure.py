@@ -127,6 +127,10 @@ def _build_provider() -> LLMProvider | None:
     return _CloudflareProvider(account_id=account_id, api_token=api_token, model=model)
 
 
+MAX_INPUT_CHARS = _MAX_INPUT_CHARS
+build_provider = _build_provider
+
+
 async def structure_text(raw_text: str) -> str:
     provider = _build_provider()
     if provider is None:
