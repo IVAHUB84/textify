@@ -68,9 +68,9 @@ async def send_result(
     message: Message,
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
-) -> None:
+) -> Message | None:
     if not text or not text.strip():
-        return
+        return None
 
     if len(text) <= MAX_MESSAGE_LEN:
         bot_username = get_bot_username()
@@ -78,8 +78,8 @@ async def send_result(
             signature = "\n\n— @" + bot_username
             if len(text) + len(signature) <= MAX_MESSAGE_LEN:
                 text = text + signature
-        await message.answer(text, reply_markup=reply_markup)
-        return
+        sent: Message = await message.answer(text, reply_markup=reply_markup)
+        return sent
 
     parts = split_text(text)
 
@@ -93,3 +93,4 @@ async def send_result(
             BufferedInputFile(text.encode("utf-8"), filename="result.txt"),
             caption="Результат целиком во вложении.",
         )
+    return None
