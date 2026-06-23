@@ -50,11 +50,24 @@ def load_config() -> dict:
                 _DEFAULT_CF_DAILY_BUDGET,
             )
 
+    group_asr_local = True
+    raw_group_asr = os.environ.get("GROUP_ASR_LOCAL", "").strip().lower()
+    if raw_group_asr in ("true", "1", "yes"):
+        group_asr_local = True
+    elif raw_group_asr in ("false", "0", "no"):
+        group_asr_local = False
+    elif raw_group_asr:
+        logger.warning(
+            "GROUP_ASR_LOCAL содержит некорректное значение %r — используется дефолт True.",
+            raw_group_asr,
+        )
+
     return {
         "BOT_TOKEN": token,
         "ADMIN_USER_ID": admin_user_id,
         "STATS_DB_PATH": stats_db_path,
         "CF_DAILY_BUDGET": cf_daily_budget,
+        "GROUP_ASR_LOCAL": group_asr_local,
     }
 
 

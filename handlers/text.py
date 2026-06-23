@@ -1,8 +1,9 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 STUB_TEXT = (
     "Распознавание текста из сообщений появится в следующих версиях бота. "

@@ -9,10 +9,12 @@ from handlers import (
     actions_router,
     audio_router,
     commands_router,
+    group_router,
     image_router,
     setup_bot_profile,
     text_router,
 )
+from handlers.group import set_bot_username
 from middlewares import StatsMiddleware
 from services.budget import init_cf_usage_db
 from services.stats import init_db
@@ -38,15 +40,21 @@ async def main() -> None:
     init_cf_usage_db()
 
     bot = Bot(token=config["BOT_TOKEN"])
+
+    me = await bot.get_me()
+    if me.username:
+        set_bot_username(me.username)
+
     dp = Dispatcher()
 
     dp.message.outer_middleware(StatsMiddleware())
 
     dp.include_router(commands_router)
+    dp.include_router(actions_router)
+    dp.include_router(group_router)
     dp.include_router(image_router)
     dp.include_router(audio_router)
     dp.include_router(text_router)
-    dp.include_router(actions_router)
 
     try:
         await setup_bot_profile(bot)

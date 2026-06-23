@@ -62,7 +62,10 @@ async def _transcribe_cloudflare(
     return data["result"]["text"].strip()
 
 
-async def transcribe(audio_bytes: bytes) -> str:
+async def transcribe(audio_bytes: bytes, force_local: bool = False) -> str:
+    if force_local:
+        return await _transcribe_local(audio_bytes)
+
     asr_provider = os.environ.get("ASR_PROVIDER", _DEFAULT_ASR_PROVIDER).strip().lower()
 
     if asr_provider == "local":
