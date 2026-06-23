@@ -4,6 +4,7 @@ from aiogram import Bot, F, Router
 from aiogram.types import Message
 
 from services.ocr import recognize_text
+from services.reply import send_result
 from services.structure import structure_text
 
 router = Router()
@@ -22,7 +23,7 @@ async def handle_photo(message: Message, bot: Bot) -> None:
     await bot.download(photo, destination=buffer)
     text = await recognize_text(buffer.getvalue())
     if text.strip():
-        await message.answer(await structure_text(text))
+        await send_result(message, await structure_text(text))
     else:
         await message.answer(NO_TEXT_MESSAGE)
 
@@ -33,6 +34,6 @@ async def handle_image_document(message: Message, bot: Bot) -> None:
     await bot.download(message.document, destination=buffer)
     text = await recognize_text(buffer.getvalue())
     if text.strip():
-        await message.answer(await structure_text(text))
+        await send_result(message, await structure_text(text))
     else:
         await message.answer(NO_TEXT_MESSAGE)
