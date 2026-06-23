@@ -5,6 +5,7 @@ from io import BytesIO
 import pytesseract
 from PIL import Image
 
+from services import HEAVY_LOCAL_SEMAPHORE
 from services.preprocess import preprocess_image
 
 logger = logging.getLogger(__name__)
@@ -83,5 +84,6 @@ def _run_ocr(image_bytes: bytes) -> str:
 
 
 async def recognize_text(image_bytes: bytes) -> str:
-    result: str = await asyncio.to_thread(_run_ocr, image_bytes)
+    async with HEAVY_LOCAL_SEMAPHORE:
+        result: str = await asyncio.to_thread(_run_ocr, image_bytes)
     return result

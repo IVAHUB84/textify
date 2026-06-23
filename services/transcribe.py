@@ -8,6 +8,8 @@ from io import BytesIO
 import httpx
 from faster_whisper import WhisperModel
 
+from services import HEAVY_LOCAL_SEMAPHORE
+
 logger = logging.getLogger(__name__)
 
 _model: WhisperModel | None = None
@@ -38,7 +40,8 @@ def _transcribe_sync(audio_bytes: bytes) -> str:
 
 
 async def _transcribe_local(audio_bytes: bytes) -> str:
-    return await asyncio.to_thread(_transcribe_sync, audio_bytes)
+    async with HEAVY_LOCAL_SEMAPHORE:
+        return await asyncio.to_thread(_transcribe_sync, audio_bytes)
 
 
 async def _transcribe_cloudflare(
