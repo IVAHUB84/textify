@@ -167,7 +167,7 @@ async def test_handle_voice_progressive_sends_preview_on_nonempty_transcript():
     bot = _make_bot_with_download()
 
     with (
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="voice transcript")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("voice transcript", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
     ):
@@ -189,7 +189,7 @@ async def test_handle_voice_no_structure_on_empty_transcript():
     bot = _make_bot_with_download()
 
     with (
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("", None))),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
         patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
@@ -208,7 +208,7 @@ async def test_handle_audio_progressive_sends_preview_on_nonempty_transcript():
     bot = _make_bot_with_download()
 
     with (
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="audio text")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("audio text", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть аудио")),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
     ):
@@ -227,7 +227,7 @@ async def test_handle_audio_no_structure_on_empty_transcript():
     bot = _make_bot_with_download()
 
     with (
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="  ")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("  ", None))),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
         patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
@@ -246,7 +246,7 @@ async def test_handle_audio_document_progressive_sends_preview_on_nonempty_trans
     bot = _make_bot_with_download()
 
     with (
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="doc audio text")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("doc audio text", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть документа")),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
     ):
@@ -265,7 +265,7 @@ async def test_handle_audio_document_no_structure_on_empty_transcript():
     bot = _make_bot_with_download()
 
     with (
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("", None))),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_struct,
         patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):

@@ -30,18 +30,20 @@ _CF_ENV = {
 
 
 # ---------------------------------------------------------------------------
-# translate и хелперы удалены из модуля
+# translate и extract_tasks присутствуют в модуле; старые хелперы — нет
 # ---------------------------------------------------------------------------
 
 
-def test_translate_not_in_module():
+def test_translate_in_module():
     import services.llm as llm
-    assert not hasattr(llm, "translate"), "translate должна быть удалена из services/llm.py"
+    assert hasattr(llm, "translate")
+    assert hasattr(llm, "extract_tasks")
 
 
-def test_translate_system_not_in_module():
+def test_translate_system_in_module():
     import services.llm as llm
-    assert not hasattr(llm, "_TRANSLATE_SYSTEM"), "_TRANSLATE_SYSTEM должна быть удалена"
+    assert hasattr(llm, "_TRANSLATE_SYSTEM")
+    assert hasattr(llm, "_TASKS_SYSTEM")
 
 
 def test_has_cyrillic_not_in_module():
@@ -59,9 +61,10 @@ def test_all_contains_summarize_gist():
     assert "summarize_gist" in llm.__all__
 
 
-def test_all_does_not_contain_translate():
+def test_all_contains_translate_and_tasks():
     import services.llm as llm
-    assert "translate" not in llm.__all__
+    assert "translate" in llm.__all__
+    assert "extract_tasks" in llm.__all__
 
 
 # ---------------------------------------------------------------------------
@@ -270,3 +273,107 @@ async def test_summarize_gist_truncates_long_input():
     user_content = [m["content"] for m in body["messages"] if m["role"] == "user"][-1]
     assert ("y" * llm.MAX_INPUT_CHARS) in user_content
     assert ("y" * (llm.MAX_INPUT_CHARS + 1)) not in user_content
+
+
+# ---------------------------------------------------------------------------
+# translate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_translate_cf_success_returns_text():
+    mock_post = AsyncMock(return_value=_make_cf_response("Hello world"))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await llm.translate("Привет мир")
+
+    assert result == "Hello world"
+
+
+@pytest.mark.asyncio
+async def test_translate_includes_fewshot_examples():
+    """translate отправляет few-shot (несколько user/assistant пар до основного текста)."""
+    mock_post = AsyncMock(return_value=_make_cf_response("ok"))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post) as mp:
+            await llm.translate("текст")
+
+    messages = mp.call_args.kwargs["json"]["messages"]
+    assert messages[0]["role"] == "system"
+    assert sum(1 for m in messages if m["role"] == "assistant") >= 2
+
+
+@pytest.mark.asyncio
+async def test_translate_budget_exceeded():
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch("services.llm.cf_budget_allow", new=AsyncMock(return_value=False)):
+            result = await llm.translate("текст")
+
+    assert result is llm.BUDGET_EXCEEDED
+
+
+@pytest.mark.asyncio
+async def test_translate_returns_none_on_network_error():
+    mock_post = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await llm.translate("текст")
+
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# extract_tasks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_tasks_cf_success_returns_text():
+    mock_post = AsyncMock(return_value=_make_cf_response("- Позвонить подрядчику"))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            result = await llm.extract_tasks("надо позвонить подрядчику")
+
+    assert result == "- Позвонить подрядчику"
+
+
+@pytest.mark.asyncio
+async def test_extract_tasks_budget_exceeded():
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch("services.llm.cf_budget_allow", new=AsyncMock(return_value=False)):
+            result = await llm.extract_tasks("текст")
+
+    assert result is llm.BUDGET_EXCEEDED
+
+
+@pytest.mark.asyncio
+async def test_extract_tasks_truncates_long_input():
+    mock_post = AsyncMock(return_value=_make_cf_response("- задача"))
+    long_text = "z" * 10000
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post) as mp:
+            await llm.extract_tasks(long_text)
+
+    body = mp.call_args.kwargs.get("json", {})
+    user_content = [m["content"] for m in body["messages"] if m["role"] == "user"][-1]
+    assert ("z" * llm.MAX_INPUT_CHARS) in user_content
+    assert ("z" * (llm.MAX_INPUT_CHARS + 1)) not in user_content

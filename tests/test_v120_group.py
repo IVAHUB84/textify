@@ -690,7 +690,7 @@ async def test_private_voice_handled_without_reply():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="речь")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("речь", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_voice(message, bot)
@@ -717,7 +717,7 @@ async def test_private_audio_handled_without_reply():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="речь")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("речь", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_audio(message, bot)
@@ -774,7 +774,7 @@ async def test_group_result_has_actions_keyboard():
     assert markup is not None
     assert isinstance(markup, InlineKeyboardMarkup)
     buttons = [btn for row in markup.inline_keyboard for btn in row]
-    assert len(buttons) == 1
+    assert len(buttons) == 3
     assert buttons[0].callback_data == "act:sum"
 
 
@@ -895,7 +895,7 @@ async def test_private_audio_uses_default_force_local():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="речь")) as mock_tr,
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("речь", None))) as mock_tr,
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await handle_voice(message, bot)

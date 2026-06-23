@@ -3,11 +3,12 @@ import time
 import pytest
 
 import services.result_cache as cache_mod
-from services.result_cache import get, put
+from services.result_cache import get, get_timestamps, put, put_timestamps
 
 
 def _clear_cache():
     cache_mod._cache.clear()
+    cache_mod._ts_cache.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -97,6 +98,20 @@ def test_lazy_eviction_removes_expired_on_put():
     assert (1, 1) not in cache_mod._cache
     assert (1, 2) not in cache_mod._cache
     assert get(1, 3) == "новый"
+
+
+def test_timestamps_round_trip():
+    put_timestamps(1, 1, "[00:00] привет")
+    assert get_timestamps(1, 1) == "[00:00] привет"
+
+
+def test_timestamps_cache_independent_from_text_cache():
+    """put в текстовый кэш не пишет в кэш тайм-кодов и наоборот."""
+    put(1, 1, "текст")
+    put_timestamps(1, 1, "[00:00] тайм-код")
+    assert get(1, 1) == "текст"
+    assert get_timestamps(1, 1) == "[00:00] тайм-код"
+    assert get_timestamps(2, 2) is None
 
 
 def test_lazy_eviction_stops_at_first_live_entry():

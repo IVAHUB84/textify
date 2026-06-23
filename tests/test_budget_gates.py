@@ -17,7 +17,7 @@ async def test_transcribe_cf_branch_consumes_budget():
     with (
         patch("services.transcribe.cf_budget_allow", new=AsyncMock(return_value=True)) as mock_allow,
         patch("services.transcribe.cf_budget_consume", new=AsyncMock()) as mock_consume,
-        patch("services.transcribe._transcribe_cloudflare", new=AsyncMock(return_value="text")) as mock_cf,
+        patch("services.transcribe._transcribe_cloudflare", new=AsyncMock(return_value=("text", None))) as mock_cf,
         patch.dict("os.environ", {
             "ASR_PROVIDER": "cloudflare",
             "CF_ACCOUNT_ID": "acc",
@@ -44,7 +44,7 @@ async def test_transcribe_cf_budget_exhausted_degrades_to_local():
         patch("services.transcribe.cf_budget_allow", new=AsyncMock(return_value=False)),
         patch("services.transcribe.cf_budget_consume", new=AsyncMock()) as mock_consume,
         patch("services.transcribe._transcribe_cloudflare", new=AsyncMock()) as mock_cf,
-        patch("services.transcribe._transcribe_local", new=AsyncMock(return_value="local text")) as mock_local,
+        patch("services.transcribe._transcribe_local", new=AsyncMock(return_value=[(0.0, 0.0, "local text")])) as mock_local,
         patch.dict("os.environ", {
             "ASR_PROVIDER": "cloudflare",
             "CF_ACCOUNT_ID": "acc",
@@ -69,7 +69,7 @@ async def test_transcribe_local_provider_no_consume():
 
     with (
         patch("services.transcribe.cf_budget_consume", new=AsyncMock()) as mock_consume,
-        patch("services.transcribe._transcribe_local", new=AsyncMock(return_value="local")) as mock_local,
+        patch("services.transcribe._transcribe_local", new=AsyncMock(return_value=[(0.0, 0.0, "local")])) as mock_local,
         patch.dict("os.environ", {"ASR_PROVIDER": "local"}),
     ):
         from services.transcribe import transcribe
@@ -90,7 +90,7 @@ async def test_transcribe_cf_budget_exhausted_warning_logged(caplog):
 
     with (
         patch("services.transcribe.cf_budget_allow", new=AsyncMock(return_value=False)),
-        patch("services.transcribe._transcribe_local", new=AsyncMock(return_value="local")),
+        patch("services.transcribe._transcribe_local", new=AsyncMock(return_value=[(0.0, 0.0, "local")])),
         patch.dict("os.environ", {
             "ASR_PROVIDER": "cloudflare",
             "CF_ACCOUNT_ID": "acc",

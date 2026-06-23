@@ -393,6 +393,95 @@ def test_cf_whisper_model_env_var_is_independent_from_cf_model(monkeypatch):
     assert cf_model == "@cf/meta/llama-3.1-8b-instruct"
 
 
+# ---------------------------------------------------------------------------
+# Тайм-коды
+# ---------------------------------------------------------------------------
+
+
+def test_format_timestamps_builds_mmss_lines():
+    segments = [(0.0, 4.0, " привет"), (65.0, 70.0, "пока")]
+    out = svc.format_timestamps(segments)
+    assert out == "[00:00] привет\n[01:05] пока"
+
+
+def test_format_timestamps_uses_hours_for_long_audio():
+    out = svc.format_timestamps([(3725.0, 3730.0, "позже")])
+    assert out == "[1:02:05] позже"
+
+
+def test_format_timestamps_skips_empty_segments():
+    out = svc.format_timestamps([(0.0, 1.0, "   "), (2.0, 3.0, "текст")])
+    assert out == "[00:02] текст"
+
+
+def test_segments_duration_returns_last_end():
+    assert svc.segments_duration([(0.0, 5.0, "a"), (5.0, 42.5, "b")]) == 42.5
+    assert svc.segments_duration([]) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_transcribe_with_timestamps_local_returns_segments(monkeypatch):
+    """Локальный путь: возвращает (текст, сегменты со start/end)."""
+    monkeypatch.setenv("ASR_PROVIDER", "local")
+
+    class _Seg:
+        def __init__(self, start, end, text):
+            self.start, self.end, self.text = start, end, text
+
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = (
+        iter([_Seg(0.0, 2.0, "Привет"), _Seg(2.0, 4.0, " мир")]),
+        MagicMock(),
+    )
+
+    with patch("services.transcribe._get_model", return_value=mock_model):
+        text, segments = await svc.transcribe_with_timestamps(b"audio")
+
+    assert text == "Привет мир"
+    assert segments == [(0.0, 2.0, "Привет"), (2.0, 4.0, " мир")]
+
+
+@pytest.mark.asyncio
+async def test_cf_parses_segments(monkeypatch):
+    """CF-ответ с segments → transcribe_with_timestamps возвращает разобранные сегменты."""
+    monkeypatch.setenv("ASR_PROVIDER", "cloudflare")
+    monkeypatch.setenv("CF_ACCOUNT_ID", "acc")
+    monkeypatch.setenv("CF_API_TOKEN", "tok")
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {
+        "result": {
+            "text": "hello world",
+            "segments": [
+                {"start": 0.0, "end": 1.0, "text": "hello"},
+                {"start": 1.0, "end": 2.0, "text": " world"},
+            ],
+        }
+    }
+    mock_post = AsyncMock(return_value=resp)
+
+    with patch.object(httpx.AsyncClient, "post", mock_post):
+        text, segments = await svc.transcribe_with_timestamps(b"audio")
+
+    assert text == "hello world"
+    assert segments == [(0.0, 1.0, "hello"), (1.0, 2.0, " world")]
+
+
+@pytest.mark.asyncio
+async def test_cf_without_segments_returns_none(monkeypatch):
+    """CF-ответ без segments → сегменты None (тайм-коды недоступны)."""
+    monkeypatch.setenv("ASR_PROVIDER", "cloudflare")
+    monkeypatch.setenv("CF_ACCOUNT_ID", "acc")
+    monkeypatch.setenv("CF_API_TOKEN", "tok")
+    mock_post = AsyncMock(return_value=_make_cf_response("only text"))
+
+    with patch.object(httpx.AsyncClient, "post", mock_post):
+        text, segments = await svc.transcribe_with_timestamps(b"audio")
+
+    assert text == "only text"
+    assert segments is None
+
+
 @pytest.mark.asyncio
 async def test_cf_whisper_model_env_used_in_url(monkeypatch):
     """CF_WHISPER_MODEL из окружения используется в URL запроса к CF."""

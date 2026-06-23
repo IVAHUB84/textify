@@ -9,8 +9,10 @@ import services.result_cache as cache_mod
 @pytest.fixture(autouse=True)
 def clear_cache():
     cache_mod._cache.clear()
+    cache_mod._ts_cache.clear()
     yield
     cache_mod._cache.clear()
+    cache_mod._ts_cache.clear()
 
 
 def _make_sender_mock() -> MagicMock:
@@ -64,7 +66,7 @@ async def test_audio_progressive_sends_preview_with_two_buttons():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="текст")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("текст", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await process_audio(message, message, bot, b"audio", progressive=True)
@@ -73,7 +75,53 @@ async def test_audio_progressive_sends_preview_with_two_buttons():
     kwargs = message.answer.await_args[1]
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert len(buttons) == 2
+    assert len(buttons) == 4
+
+
+@pytest.mark.asyncio
+async def test_audio_long_adds_timestamps_button_and_caches():
+    """Длинное аудио (есть сегменты > порога) → кнопка act:ts + put_timestamps."""
+    from handlers.audio import process_audio
+
+    message = _make_message()
+    bot = _make_bot_with_download()
+    sender_mock = _make_sender_mock()
+    segments = [(0.0, 1.0, "начало"), (61.0, 65.0, "конец")]
+
+    with (
+        patch("handlers.audio.ChatActionSender", return_value=sender_mock),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("начало конец", segments))),
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
+    ):
+        await process_audio(message, message, bot, b"audio", progressive=True)
+
+    kwargs = message.answer.await_args[1]
+    data_values = {btn.callback_data for row in kwargs["reply_markup"].inline_keyboard for btn in row}
+    assert "act:ts" in data_values
+    sent_id = message.answer.return_value.message_id
+    assert cache_mod.get_timestamps(_CHAT_ID, sent_id) == "[00:00] начало\n[01:01] конец"
+
+
+@pytest.mark.asyncio
+async def test_audio_short_no_timestamps_button():
+    """Короткое аудио (длительность < порога) → нет act:ts."""
+    from handlers.audio import process_audio
+
+    message = _make_message()
+    bot = _make_bot_with_download()
+    sender_mock = _make_sender_mock()
+    segments = [(0.0, 1.0, "коротко")]
+
+    with (
+        patch("handlers.audio.ChatActionSender", return_value=sender_mock),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("коротко", segments))),
+        patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
+    ):
+        await process_audio(message, message, bot, b"audio", progressive=True)
+
+    kwargs = message.answer.await_args[1]
+    data_values = {btn.callback_data for row in kwargs["reply_markup"].inline_keyboard for btn in row}
+    assert "act:ts" not in data_values
 
 
 @pytest.mark.asyncio
@@ -87,7 +135,7 @@ async def test_audio_progressive_cache_put_called():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="исходный текст")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("исходный текст", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
     ):
         await process_audio(message, message, bot, b"audio", progressive=True)
@@ -107,7 +155,7 @@ async def test_audio_progressive_structure_text_not_called():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="текст")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("текст", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть")),
         patch("handlers.audio.structure_text", new=AsyncMock()) as mock_st,
     ):
@@ -128,7 +176,7 @@ async def test_audio_progressive_gist_budget_exceeded_sends_service_preview():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="исходный текст")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("исходный текст", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value=BUDGET_EXCEEDED)),
     ):
         await process_audio(message, message, bot, b"audio", progressive=True)
@@ -152,7 +200,7 @@ async def test_audio_progressive_gist_none_sends_service_preview():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="исходный текст")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("исходный текст", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value=None)),
     ):
         await process_audio(message, message, bot, b"audio", progressive=True)
@@ -175,7 +223,7 @@ async def test_audio_progressive_empty_transcript_no_preview_no_cache():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
         await process_audio(message, message, bot, b"audio", progressive=True)
@@ -197,7 +245,7 @@ async def test_audio_non_progressive_sends_one_button():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="текст")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("текст", None))),
         patch("handlers.audio.structure_text", new=AsyncMock(return_value="## текст")),
         patch("handlers.audio.summarize_gist", new=AsyncMock()) as mock_gist,
     ):
@@ -208,7 +256,7 @@ async def test_audio_non_progressive_sends_one_button():
     kwargs = message.answer.await_args[1]
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert len(buttons) == 1
+    assert len(buttons) == 3
     assert buttons[0].callback_data == "act:sum"
 
 
@@ -239,7 +287,7 @@ async def test_image_progressive_sends_preview_with_two_buttons():
     kwargs = message.answer.await_args[1]
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert len(buttons) == 2
+    assert len(buttons) == 4
 
 
 @pytest.mark.asyncio
@@ -376,5 +424,5 @@ async def test_image_non_progressive_sends_one_button():
     kwargs = message.answer.await_args[1]
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert len(buttons) == 1
+    assert len(buttons) == 3
     assert buttons[0].callback_data == "act:sum"

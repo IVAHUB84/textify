@@ -403,7 +403,7 @@ async def test_no_speech_message_via_direct_answer():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("", None))),
         patch("handlers.audio.structure_text", new=AsyncMock()),
         patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
     ):
@@ -500,7 +500,7 @@ async def test_audio_non_progressive_attribution_footer_present():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="текст")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("текст", None))),
         patch("handlers.audio.structure_text", new=AsyncMock(return_value="## структура")),
         patch("services.reply.config", {"ATTRIBUTION_FOOTER": True}),
         patch("services.reply.get_bot_username", return_value="TestifyBot"),

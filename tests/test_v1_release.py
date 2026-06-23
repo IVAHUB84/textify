@@ -274,7 +274,7 @@ async def test_cf_path_does_not_serialize_through_semaphore(monkeypatch):
         start_times.append(time.monotonic())
         await asyncio.sleep(0.03)
         end_times.append(time.monotonic())
-        return "cf result"
+        return "cf result", None
 
     original_semaphore = services.HEAVY_LOCAL_SEMAPHORE
     services.HEAVY_LOCAL_SEMAPHORE = asyncio.Semaphore(1)
@@ -433,7 +433,7 @@ async def test_chat_action_sender_audio_text_sends_result():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="транскрипт")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("транскрипт", None))),
         patch("handlers.audio.summarize_gist", new=AsyncMock(return_value="суть аудио")),
     ):
         await handle_voice(message, bot)
@@ -466,7 +466,7 @@ async def test_chat_action_sender_audio_empty_sends_service_message():
 
     with (
         patch("handlers.audio.ChatActionSender", return_value=sender_mock),
-        patch("handlers.audio.transcribe", new=AsyncMock(return_value="")),
+        patch("handlers.audio.transcribe_with_timestamps", new=AsyncMock(return_value=("", None))),
         patch("handlers.audio.structure_text", new=AsyncMock()),
         patch("handlers.audio.send_result", new=AsyncMock()) as mock_send,
     ):

@@ -19,8 +19,10 @@ def mock_chat_action_sender():
 @pytest.fixture(autouse=True)
 def clear_cache():
     cache_mod._cache.clear()
+    cache_mod._ts_cache.clear()
     yield
     cache_mod._cache.clear()
+    cache_mod._ts_cache.clear()
 
 
 def _make_callback(message_id: int = 100) -> MagicMock:
@@ -52,78 +54,73 @@ def _make_callback_inaccessible() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_actions_keyboard_progressive_has_two_buttons():
-    """actions_keyboard(True) → ровно две кнопки: act:full и act:sum."""
+def test_actions_keyboard_progressive_has_four_buttons():
+    """actions_keyboard(True) → act:full, act:sum, act:tr, act:task."""
     from aiogram.types import InlineKeyboardMarkup
 
     kb = actions_keyboard(True)
     assert isinstance(kb, InlineKeyboardMarkup)
-    buttons = [btn for row in kb.inline_keyboard for btn in row]
-    assert len(buttons) == 2
-
-
-def test_actions_keyboard_progressive_has_full_and_sum():
-    """actions_keyboard(True) содержит act:full и act:sum."""
-    kb = actions_keyboard(True)
     data_values = {btn.callback_data for row in kb.inline_keyboard for btn in row}
-    assert "act:full" in data_values
-    assert "act:sum" in data_values
+    assert data_values == {"act:full", "act:sum", "act:tr", "act:task"}
 
 
-def test_actions_keyboard_non_progressive_has_one_button():
-    """actions_keyboard(False) → одна кнопка act:sum."""
+def test_actions_keyboard_non_progressive_has_three_buttons():
+    """actions_keyboard(False) → act:sum, act:tr, act:task; первая — act:sum."""
     kb = actions_keyboard(False)
     buttons = [btn for row in kb.inline_keyboard for btn in row]
-    assert len(buttons) == 1
+    data_values = {btn.callback_data for btn in buttons}
+    assert data_values == {"act:sum", "act:tr", "act:task"}
     assert buttons[0].callback_data == "act:sum"
 
 
-def test_actions_keyboard_no_translate_in_progressive():
-    """В progressive=True нет act:tr."""
-    kb = actions_keyboard(True)
-    data_values = {btn.callback_data for row in kb.inline_keyboard for btn in row}
-    assert "act:tr" not in data_values
-
-
-def test_actions_keyboard_no_translate_in_non_progressive():
-    """В progressive=False нет act:tr."""
-    kb = actions_keyboard(False)
-    data_values = {btn.callback_data for row in kb.inline_keyboard for btn in row}
-    assert "act:tr" not in data_values
+def test_actions_keyboard_timestamps_button_optional():
+    """with_timestamps=True добавляет act:ts; по умолчанию его нет."""
+    assert "act:ts" not in {
+        btn.callback_data for row in actions_keyboard(True).inline_keyboard for btn in row
+    }
+    for progressive in (True, False):
+        data_values = {
+            btn.callback_data
+            for row in actions_keyboard(progressive, with_timestamps=True).inline_keyboard
+            for btn in row
+        }
+        assert "act:ts" in data_values
 
 
 def test_actions_keyboard_callback_data_within_64_bytes():
-    """callback_data кнопок ≤ 64 байт в обоих режимах."""
+    """callback_data кнопок ≤ 64 байт во всех режимах."""
     for progressive in (True, False):
-        kb = actions_keyboard(progressive)
-        for row in kb.inline_keyboard:
-            for btn in row:
-                assert btn.callback_data is not None
-                assert len(btn.callback_data.encode("utf-8")) <= 64
+        for with_ts in (True, False):
+            kb = actions_keyboard(progressive, with_timestamps=with_ts)
+            for row in kb.inline_keyboard:
+                for btn in row:
+                    assert btn.callback_data is not None
+                    assert len(btn.callback_data.encode("utf-8")) <= 64
 
 
 def test_actions_keyboard_default_is_non_progressive():
-    """actions_keyboard() без аргумента → одна кнопка (дефолт False)."""
+    """actions_keyboard() без аргумента → набор non-progressive (act:sum первая)."""
     kb = actions_keyboard()
     buttons = [btn for row in kb.inline_keyboard for btn in row]
-    assert len(buttons) == 1
+    assert buttons[0].callback_data == "act:sum"
+    assert "act:full" not in {btn.callback_data for btn in buttons}
 
 
 # ---------------------------------------------------------------------------
-# handle_translate / act:tr — удалены из модуля
+# handle_translate / act:tr — присутствуют в модуле
 # ---------------------------------------------------------------------------
 
 
-def test_handle_translate_not_in_module():
-    """handle_translate не экспортируется из handlers/actions."""
+def test_handle_translate_in_module():
+    """handle_translate экспортируется из handlers/actions."""
     import handlers.actions as mod
-    assert not hasattr(mod, "handle_translate"), "handle_translate должен быть удалён"
+    assert hasattr(mod, "handle_translate")
 
 
-def test_act_tr_not_in_module():
-    """_CB_TRANSLATE / act:tr отсутствует в handlers/actions."""
+def test_act_tr_in_module():
+    """_CB_TRANSLATE / act:tr присутствует в handlers/actions."""
     import handlers.actions as mod
-    assert not hasattr(mod, "_CB_TRANSLATE"), "_CB_TRANSLATE должен быть удалён"
+    assert mod._CB_TRANSLATE == "act:tr"
 
 
 # ---------------------------------------------------------------------------
@@ -336,3 +333,141 @@ async def test_handle_summarize_inaccessible_message_no_llm():
 
     mock_sum.assert_not_awaited()
     mock_send.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# act:tr — перевод
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_translate_cache_hit_calls_translate():
+    """act:tr при кэш-хите → translate вызывается с исходным текстом, send_result без markup."""
+    from handlers.actions import handle_translate
+
+    callback = _make_callback(message_id=600)
+    cache_mod.put(12345, 600, "исходный текст")
+
+    with (
+        patch("handlers.actions.translate", new=AsyncMock(return_value="translated")) as mock_tr,
+        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
+    ):
+        await handle_translate(callback)
+
+    mock_tr.assert_awaited_once_with("исходный текст")
+    mock_send.assert_awaited_once()
+    _, kwargs = mock_send.await_args
+    assert kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_handle_translate_cache_miss_no_llm():
+    """act:tr при пустом кэше → translate не вызывается, alert."""
+    from handlers.actions import handle_translate
+
+    callback = _make_callback(message_id=601)
+
+    with (
+        patch("handlers.actions.translate", new=AsyncMock()) as mock_tr,
+        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
+    ):
+        await handle_translate(callback)
+
+    mock_tr.assert_not_awaited()
+    mock_send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_handle_translate_budget_exceeded_sends_service_message():
+    """act:tr при BUDGET_EXCEEDED → message.answer с понятным сообщением."""
+    from handlers.actions import handle_translate
+    from services.llm import BUDGET_EXCEEDED
+
+    callback = _make_callback(message_id=602)
+    cache_mod.put(12345, 602, "текст")
+
+    with (
+        patch("handlers.actions.translate", new=AsyncMock(return_value=BUDGET_EXCEEDED)),
+        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
+    ):
+        await handle_translate(callback)
+
+    mock_send.assert_not_awaited()
+    callback.message.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# act:task — задачи
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_tasks_cache_hit_calls_extract_tasks():
+    """act:task при кэш-хите → extract_tasks вызывается, send_result без markup."""
+    from handlers.actions import handle_tasks
+
+    callback = _make_callback(message_id=700)
+    cache_mod.put(12345, 700, "сделать отчёт")
+
+    with (
+        patch("handlers.actions.extract_tasks", new=AsyncMock(return_value="- Сделать отчёт")) as mock_tasks,
+        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
+    ):
+        await handle_tasks(callback)
+
+    mock_tasks.assert_awaited_once_with("сделать отчёт")
+    mock_send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_tasks_none_result_sends_service_message():
+    """act:task при None → message.answer с сообщением об ошибке."""
+    from handlers.actions import handle_tasks
+
+    callback = _make_callback(message_id=701)
+    cache_mod.put(12345, 701, "текст")
+
+    with (
+        patch("handlers.actions.extract_tasks", new=AsyncMock(return_value=None)),
+        patch("handlers.actions.send_result", new=AsyncMock()) as mock_send,
+    ):
+        await handle_tasks(callback)
+
+    mock_send.assert_not_awaited()
+    callback.message.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# act:ts — тайм-коды (источник — отдельный кэш, без LLM)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_timestamps_cache_hit_sends_result():
+    """act:ts при наличии тайм-кодов → send_result с текстом тайм-кодов."""
+    from handlers.actions import handle_timestamps
+
+    callback = _make_callback(message_id=800)
+    cache_mod.put_timestamps(12345, 800, "[00:00] привет\n[00:05] пока")
+
+    with patch("handlers.actions.send_result", new=AsyncMock()) as mock_send:
+        await handle_timestamps(callback)
+
+    mock_send.assert_awaited_once()
+    assert mock_send.await_args[0][1] == "[00:00] привет\n[00:05] пока"
+
+
+@pytest.mark.asyncio
+async def test_handle_timestamps_cache_miss_alert():
+    """act:ts при отсутствии тайм-кодов → alert, send_result не вызывается."""
+    from handlers.actions import handle_timestamps
+
+    callback = _make_callback(message_id=801)
+
+    with patch("handlers.actions.send_result", new=AsyncMock()) as mock_send:
+        await handle_timestamps(callback)
+
+    mock_send.assert_not_awaited()
+    calls = callback.answer.await_args_list
+    alert_calls = [c for c in calls if c[1].get("show_alert") is True]
+    assert len(alert_calls) >= 1

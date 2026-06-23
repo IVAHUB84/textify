@@ -10,7 +10,12 @@ from services import result_cache
 from services.llm import BUDGET_EXCEEDED, summarize_gist
 from services.reply import send_result
 from services.structure import structure_text
-from services.transcribe import transcribe
+from services.transcribe import (
+    TIMESTAMP_MIN_SECONDS,
+    format_timestamps,
+    segments_duration,
+    transcribe_with_timestamps,
+)
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -30,10 +35,16 @@ async def process_audio(
     progressive: bool = False,
 ) -> None:
     async with ChatActionSender(bot=bot, chat_id=reply_target.chat.id, action=ChatAction.TYPING):
-        text = await transcribe(audio_bytes, force_local=force_local)
+        text, segments = await transcribe_with_timestamps(audio_bytes, force_local=force_local)
         if not text.strip():
             await reply_target.answer(NO_SPEECH_MESSAGE)
             return
+
+        ts_text: str | None = None
+        if segments and segments_duration(segments) >= TIMESTAMP_MIN_SECONDS:
+            ts_text = format_timestamps(segments) or None
+
+        keyboard = actions_keyboard(progressive=progressive, with_timestamps=ts_text is not None)
 
         if progressive:
             gist = await summarize_gist(text)
@@ -43,13 +54,17 @@ async def process_audio(
                 preview = _GIST_BUDGET_PREVIEW
             else:
                 preview = _GIST_FAIL_PREVIEW
-            sent: Message = await reply_target.answer(preview, reply_markup=actions_keyboard(progressive=True))
+            sent: Message = await reply_target.answer(preview, reply_markup=keyboard)
             result_cache.put(sent.chat.id, sent.message_id, text)
+            if ts_text is not None:
+                result_cache.put_timestamps(sent.chat.id, sent.message_id, ts_text)
         else:
             structured = await structure_text(text)
-            result_msg = await send_result(reply_target, structured, reply_markup=actions_keyboard(progressive=False))
+            result_msg = await send_result(reply_target, structured, reply_markup=keyboard)
             if result_msg is not None:
                 result_cache.put(result_msg.chat.id, result_msg.message_id, text)
+                if ts_text is not None:
+                    result_cache.put_timestamps(result_msg.chat.id, result_msg.message_id, ts_text)
 
 
 @router.message(F.voice)
