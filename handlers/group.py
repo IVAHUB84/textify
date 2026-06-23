@@ -8,21 +8,16 @@ from aiogram.types import Audio, Document, Message, MessageEntity, Voice
 from config import config
 from handlers.audio import process_audio
 from handlers.image import process_image_document, process_photo
+from services.bot_identity import get_bot_username, set_bot_username  # noqa: F401 (re-exported for tests)
 
 group_router = Router()
 group_router.message.filter(F.chat.type.in_({"group", "supergroup"}))
 
 _HINT_MESSAGE = "Ответьте этой командой на голосовое, аудио или фото с текстом."
 
-_bot_username: str = ""
-
-
-def set_bot_username(username: str) -> None:
-    global _bot_username
-    _bot_username = username.lstrip("@").lower()
-
 
 def _is_bot_mention(entities: list[MessageEntity] | None, text: str | None) -> bool:
+    _bot_username = get_bot_username().lower()
     if not entities or not _bot_username:
         return False
     for entity in entities:
