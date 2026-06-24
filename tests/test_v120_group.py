@@ -424,7 +424,10 @@ async def test_group_textify_command_voice_reply():
 
     bot.download = fake_download
 
-    with patch("handlers.group.process_audio", new=AsyncMock()) as mock_process:
+    with (
+        patch("handlers.group.enforce_limit", new=AsyncMock(return_value=True)),
+        patch("handlers.group.process_audio", new=AsyncMock()) as mock_process,
+    ):
         await grp.handle_group_textify_command(trigger_msg, bot)
 
     mock_process.assert_awaited_once()
@@ -481,7 +484,10 @@ async def test_group_mention_audio_reply():
 
     bot.download = fake_download
 
-    with patch("handlers.group.process_audio", new=AsyncMock()) as mock_process:
+    with (
+        patch("handlers.group.enforce_limit", new=AsyncMock(return_value=True)),
+        patch("handlers.group.process_audio", new=AsyncMock()) as mock_process,
+    ):
         await grp.handle_group_mention(trigger_msg, bot)
 
     mock_process.assert_awaited_once()
@@ -603,6 +609,7 @@ async def test_group_asr_force_local_true():
 
     with (
         patch("handlers.group.config", {"GROUP_ASR_LOCAL": True}),
+        patch("handlers.group.enforce_limit", new=AsyncMock(return_value=True)),
         patch("handlers.group.process_audio", new=AsyncMock()) as mock_process,
     ):
         await grp.handle_group_textify_command(trigger_msg, bot)
@@ -629,6 +636,7 @@ async def test_group_asr_force_local_false():
 
     with (
         patch("handlers.group.config", {"GROUP_ASR_LOCAL": False}),
+        patch("handlers.group.enforce_limit", new=AsyncMock(return_value=True)),
         patch("handlers.group.process_audio", new=AsyncMock()) as mock_process,
     ):
         await grp.handle_group_textify_command(trigger_msg, bot)

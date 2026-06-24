@@ -217,7 +217,10 @@ async def test_grec_callback_on_voice_calls_dispatch():
         await grp.handle_grec_callback(cb, cb.bot)
 
     cb.answer.assert_awaited()
-    mock_dispatch.assert_awaited_once_with(media_msg, cb.bot)
+    mock_dispatch.assert_awaited_once()
+    call_kwargs = mock_dispatch.call_args
+    assert call_kwargs.args[0] is media_msg
+    assert call_kwargs.args[1] is cb.bot
 
 
 @pytest.mark.asyncio
@@ -268,6 +271,7 @@ async def test_grec_callback_audio_force_local_true():
 
     with (
         patch("handlers.group.config", {"GROUP_ASR_LOCAL": True}),
+        patch("handlers.group.enforce_limit", new=AsyncMock(return_value=True)),
         patch("handlers.group.process_audio", new=AsyncMock()) as mock_audio,
     ):
         await grp.handle_grec_callback(cb, cb.bot)
@@ -291,6 +295,7 @@ async def test_grec_callback_audio_force_local_false():
 
     with (
         patch("handlers.group.config", {"GROUP_ASR_LOCAL": False}),
+        patch("handlers.group.enforce_limit", new=AsyncMock(return_value=True)),
         patch("handlers.group.process_audio", new=AsyncMock()) as mock_audio,
     ):
         await grp.handle_grec_callback(cb, cb.bot)
@@ -315,7 +320,9 @@ async def test_grec_callback_on_image_document():
     with patch("handlers.group.process_image_document", new=AsyncMock()) as mock_proc:
         await grp.handle_grec_callback(cb, cb.bot)
 
-    mock_proc.assert_awaited_once_with(media_msg, media_msg, cb.bot)
+    mock_proc.assert_awaited_once()
+    call_args = mock_proc.call_args
+    assert call_args.args[:3] == (media_msg, media_msg, cb.bot)
 
 
 @pytest.mark.asyncio
@@ -329,7 +336,9 @@ async def test_grec_callback_on_photo():
     with patch("handlers.group.process_photo", new=AsyncMock()) as mock_proc:
         await grp.handle_grec_callback(cb, cb.bot)
 
-    mock_proc.assert_awaited_once_with(media_msg, media_msg, cb.bot)
+    mock_proc.assert_awaited_once()
+    call_args = mock_proc.call_args
+    assert call_args.args[:3] == (media_msg, media_msg, cb.bot)
 
 
 # ---------------------------------------------------------------------------
@@ -453,7 +462,10 @@ async def test_trigger_textify_still_works():
     grp_bot = AsyncMock()
     grp_bot.download = fake_download
 
-    with patch("handlers.group.process_audio", new=AsyncMock()) as mock_proc:
+    with (
+        patch("handlers.group.enforce_limit", new=AsyncMock(return_value=True)),
+        patch("handlers.group.process_audio", new=AsyncMock()) as mock_proc,
+    ):
         await grp.handle_group_textify_command(trigger_msg, grp_bot)
 
     mock_proc.assert_awaited_once()
