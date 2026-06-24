@@ -7,8 +7,10 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import config
 from services.bot_identity import get_bot_username
+from services.limits import total_today, usage_today
 from services.referrals import count_referrals, record_referral, top_referrers, total_referrals
 from services.stats import get_stats
+from services.subscription import cached_subscriber_count, is_subscriber_cached
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +129,24 @@ async def cmd_start(message: Message, command: CommandObject, is_new_user: bool 
             "Ошибка чтения счётчика рефералов для user_id=%d", user_id
         )
 
+    limit_line = ""
+    try:
+        subscriber = is_subscriber_cached(user_id)
+        limit_cap = (
+            config["DAILY_LIMIT_SUBSCRIBED"] if subscriber else config["DAILY_LIMIT_FREE"]
+        )
+        used = await usage_today(user_id)
+        remaining = max(0, limit_cap - used)
+        limit_line = f"\nСегодня доступно {remaining} из {limit_cap} распознаваний."
+    except Exception:
+        logger.exception("Ошибка чтения дневного лимита для user_id=%d", user_id)
+
     ref_link = _build_ref_link(user_id)
     text = (
         f"{START_TEXT}\n\n"
         f"Ваша реферальная ссылка:\n{ref_link}\n"
         f"Приглашено: {invited_count}"
+        f"{limit_line}"
     )
 
     markup = _build_share_keyboard(user_id)
@@ -164,6 +179,17 @@ async def cmd_stats(message: Message) -> None:
     else:
         ref_block = f"Всего рефералов: {ref_total}\nТоп приглашающих:\n  пока нет рефералов"
 
+    limits_block = ""
+    try:
+        recognitions_today = await total_today()
+        subscribers_cached = cached_subscriber_count()
+        limits_block = (
+            f"\nДневные распознавания (UTC сегодня): {recognitions_today}\n"
+            f"Подтверждённых подписчиков в кэше: {subscribers_cached}"
+        )
+    except Exception:
+        logger.exception("Ошибка чтения статистики лимитов")
+
     text = (
         "Статистика Textify\n\n"
         f"Уникальных пользователей: {stats['unique_users']}\n"
@@ -177,5 +203,6 @@ async def cmd_stats(message: Message) -> None:
         f"Первое обращение (UTC): {first_seen}\n"
         f"Последнее обращение (UTC): {last_seen}\n\n"
         f"{ref_block}"
+        f"{limits_block}"
     )
     await message.answer(text)

@@ -74,6 +74,50 @@ def load_config() -> dict:
             raw_attribution,
         )
 
+    required_channel = os.environ.get("REQUIRED_CHANNEL", "").strip()
+
+    _DEFAULT_DAILY_LIMIT_FREE = 3
+    daily_limit_free = _DEFAULT_DAILY_LIMIT_FREE
+    raw_limit_free = os.environ.get("DAILY_LIMIT_FREE", "").strip()
+    if raw_limit_free:
+        try:
+            parsed = int(raw_limit_free)
+            if parsed <= 0:
+                logger.warning(
+                    "DAILY_LIMIT_FREE содержит неположительное значение %r — используется дефолт %d.",
+                    raw_limit_free,
+                    _DEFAULT_DAILY_LIMIT_FREE,
+                )
+            else:
+                daily_limit_free = parsed
+        except ValueError:
+            logger.warning(
+                "DAILY_LIMIT_FREE содержит нечисловое значение %r — используется дефолт %d.",
+                raw_limit_free,
+                _DEFAULT_DAILY_LIMIT_FREE,
+            )
+
+    _DEFAULT_DAILY_LIMIT_SUBSCRIBED = 30
+    daily_limit_subscribed = _DEFAULT_DAILY_LIMIT_SUBSCRIBED
+    raw_limit_subscribed = os.environ.get("DAILY_LIMIT_SUBSCRIBED", "").strip()
+    if raw_limit_subscribed:
+        try:
+            parsed = int(raw_limit_subscribed)
+            if parsed <= 0:
+                logger.warning(
+                    "DAILY_LIMIT_SUBSCRIBED содержит неположительное значение %r — используется дефолт %d.",
+                    raw_limit_subscribed,
+                    _DEFAULT_DAILY_LIMIT_SUBSCRIBED,
+                )
+            else:
+                daily_limit_subscribed = parsed
+        except ValueError:
+            logger.warning(
+                "DAILY_LIMIT_SUBSCRIBED содержит нечисловое значение %r — используется дефолт %d.",
+                raw_limit_subscribed,
+                _DEFAULT_DAILY_LIMIT_SUBSCRIBED,
+            )
+
     return {
         "BOT_TOKEN": token,
         "ADMIN_USER_ID": admin_user_id,
@@ -81,6 +125,9 @@ def load_config() -> dict:
         "CF_DAILY_BUDGET": cf_daily_budget,
         "GROUP_ASR_LOCAL": group_asr_local,
         "ATTRIBUTION_FOOTER": attribution_footer,
+        "REQUIRED_CHANNEL": required_channel,
+        "DAILY_LIMIT_FREE": daily_limit_free,
+        "DAILY_LIMIT_SUBSCRIBED": daily_limit_subscribed,
     }
 
 

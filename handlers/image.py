@@ -6,6 +6,7 @@ from aiogram.types import Message
 from aiogram.utils.chat_action import ChatActionSender
 
 from handlers.actions import actions_keyboard
+from handlers.gate import enforce_limit
 from handlers.limits import OVERSIZED_MESSAGE, is_oversized
 from services import result_cache
 from services.llm import BUDGET_EXCEEDED, summarize_gist
@@ -31,11 +32,24 @@ async def process_photo(
     reply_target: Message,
     bot: Bot,
     progressive: bool = False,
+    initiator_id: int | None = None,
 ) -> None:
     assert media_message.photo is not None
     photo = media_message.photo[-1]
     if is_oversized(photo.file_size):
         await reply_target.answer(OVERSIZED_MESSAGE)
+        return
+
+    if initiator_id is not None:
+        user_id: int | None = initiator_id
+    elif media_message.from_user:
+        user_id = media_message.from_user.id
+    elif reply_target.from_user:
+        user_id = reply_target.from_user.id
+    else:
+        user_id = None
+    is_private = media_message.chat.type == "private"
+    if user_id is not None and not await enforce_limit(reply_target, user_id, is_private):
         return
     buffer = BytesIO()
     await bot.download(photo, destination=buffer)
@@ -74,10 +88,23 @@ async def process_image_document(
     reply_target: Message,
     bot: Bot,
     progressive: bool = False,
+    initiator_id: int | None = None,
 ) -> None:
     assert media_message.document is not None
     if is_oversized(media_message.document.file_size):
         await reply_target.answer(OVERSIZED_MESSAGE)
+        return
+
+    if initiator_id is not None:
+        user_id: int | None = initiator_id
+    elif media_message.from_user:
+        user_id = media_message.from_user.id
+    elif reply_target.from_user:
+        user_id = reply_target.from_user.id
+    else:
+        user_id = None
+    is_private = media_message.chat.type == "private"
+    if user_id is not None and not await enforce_limit(reply_target, user_id, is_private):
         return
     buffer = BytesIO()
     await bot.download(media_message.document, destination=buffer)

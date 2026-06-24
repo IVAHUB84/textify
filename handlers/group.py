@@ -7,6 +7,7 @@ from aiogram.types import Audio, CallbackQuery, Document, InaccessibleMessage, I
 
 from config import config
 from handlers.audio import process_audio
+from handlers.gate import enforce_limit
 from handlers.image import process_image_document, process_photo
 from handlers.limits import OVERSIZED_MESSAGE, is_oversized
 from services.bot_identity import get_bot_username, set_bot_username  # noqa: F401 (re-exported for tests)
@@ -62,7 +63,8 @@ async def _handle_trigger(message: Message, bot: Bot) -> None:
     if not reply or not _has_supported_media(reply):
         await message.answer(_HINT_MESSAGE)
         return
-    await _dispatch_media(reply, bot)
+    initiator_id = message.from_user.id if message.from_user else None
+    await _dispatch_media(reply, bot, initiator_id=initiator_id)
 
 
 @group_router.message(Command("textify"))
@@ -97,11 +99,12 @@ async def handle_grec_callback(callback: CallbackQuery, bot: Bot) -> None:
         await callback.answer("Медиа недоступно. Перешлите файл заново.", show_alert=True)
         return
 
+    initiator_id = callback.from_user.id if callback.from_user else None
     await callback.answer("Распознаю…")
-    await _dispatch_media(reply, bot)
+    await _dispatch_media(reply, bot, initiator_id=initiator_id)
 
 
-async def _dispatch_media(reply: Message, bot: Bot) -> None:
+async def _dispatch_media(reply: Message, bot: Bot, initiator_id: int | None = None) -> None:
     force_local: bool = config["GROUP_ASR_LOCAL"]
 
     audio_attachment: Union[Voice, Audio, Document, None] = reply.voice or reply.audio
@@ -112,15 +115,18 @@ async def _dispatch_media(reply: Message, bot: Bot) -> None:
         if is_oversized(audio_attachment.file_size):
             await reply.answer(OVERSIZED_MESSAGE)
             return
+        user_id = initiator_id if initiator_id is not None else (reply.from_user.id if reply.from_user else None)
+        if user_id is not None and not await enforce_limit(reply, user_id, is_private=False):
+            return
         buffer = BytesIO()
         await bot.download(audio_attachment, destination=buffer)
         await process_audio(reply, reply, bot, buffer.getvalue(), force_local=force_local)
         return
 
     if reply.photo:
-        await process_photo(reply, reply, bot)
+        await process_photo(reply, reply, bot, initiator_id=initiator_id)
         return
 
     if reply.document and reply.document.mime_type and reply.document.mime_type.startswith("image/"):
-        await process_image_document(reply, reply, bot)
+        await process_image_document(reply, reply, bot, initiator_id=initiator_id)
         return

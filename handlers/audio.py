@@ -6,6 +6,7 @@ from aiogram.types import Message
 from aiogram.utils.chat_action import ChatActionSender
 
 from handlers.actions import actions_keyboard
+from handlers.gate import enforce_limit
 from handlers.limits import OVERSIZED_MESSAGE, is_oversized
 from services import result_cache
 from services.llm import BUDGET_EXCEEDED, summarize_gist
@@ -72,6 +73,9 @@ async def handle_voice(message: Message, bot: Bot) -> None:
     if is_oversized(message.voice.file_size):
         await message.answer(OVERSIZED_MESSAGE)
         return
+    user_id = message.from_user.id if message.from_user else None
+    if user_id is None or not await enforce_limit(message, user_id, is_private=True):
+        return
     buffer = BytesIO()
     await bot.download(message.voice, destination=buffer)
     await process_audio(message, message, bot, buffer.getvalue(), progressive=True)
@@ -83,6 +87,9 @@ async def handle_audio(message: Message, bot: Bot) -> None:
     if is_oversized(message.audio.file_size):
         await message.answer(OVERSIZED_MESSAGE)
         return
+    user_id = message.from_user.id if message.from_user else None
+    if user_id is None or not await enforce_limit(message, user_id, is_private=True):
+        return
     buffer = BytesIO()
     await bot.download(message.audio, destination=buffer)
     await process_audio(message, message, bot, buffer.getvalue(), progressive=True)
@@ -93,6 +100,9 @@ async def handle_audio_document(message: Message, bot: Bot) -> None:
     assert message.document is not None
     if is_oversized(message.document.file_size):
         await message.answer(OVERSIZED_MESSAGE)
+        return
+    user_id = message.from_user.id if message.from_user else None
+    if user_id is None or not await enforce_limit(message, user_id, is_private=True):
         return
     buffer = BytesIO()
     await bot.download(message.document, destination=buffer)

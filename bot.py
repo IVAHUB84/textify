@@ -15,9 +15,11 @@ from handlers import (
     setup_bot_profile,
     text_router,
 )
+from handlers.gate import gate_router
 from middlewares import StatsMiddleware
 from services.bot_identity import set_bot_username
 from services.budget import init_cf_usage_db
+from services.limits import init_limits_db
 from services.referrals import init_referrals_db
 from services.result_cache import init_result_cache
 from services.stats import init_db
@@ -41,6 +43,7 @@ async def main() -> None:
     logging.getLogger(__name__).info("Textify bot starting")
     init_db()
     init_referrals_db()
+    init_limits_db()
     init_cf_usage_db()
     init_result_cache(str(Path(config["STATS_DB_PATH"]).parent / "results.db"))
 
@@ -54,6 +57,7 @@ async def main() -> None:
 
     dp.message.outer_middleware(StatsMiddleware())
 
+    dp.include_router(gate_router)
     dp.include_router(commands_router)
     dp.include_router(actions_router)
     dp.include_router(group_router)
