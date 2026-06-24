@@ -4,7 +4,8 @@ from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import config
-from services import limits, subscription
+from handlers.commands import build_share_url
+from services import limits, referrals, subscription
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +14,6 @@ gate_router = Router()
 _CB_GATE_CHECK = "gate:chk"
 
 _MSG_LIMIT_NEUTRAL = "Дневной лимит распознаваний исчерпан, попробуйте завтра."
-_MSG_GATE_PROMPT = (
-    "Вы исчерпали бесплатный дневной лимит распознаваний.\n\n"
-    "Подпишитесь на наш канал — и лимит существенно вырастет!"
-)
 _MSG_SUBSCRIBED = (
     "Подписка подтверждена, лимит повышен — пришлите медиа ещё раз."
 )
@@ -25,27 +22,40 @@ _MSG_NOT_SUBSCRIBED = (
 )
 
 
-def _gate_keyboard() -> InlineKeyboardMarkup:
-    buttons: list[InlineKeyboardButton] = []
+def _gate_prompt_text() -> str:
+    per = config["REFERRAL_BONUS_PER"]
+    return (
+        "Вы исчерпали дневной лимит распознаваний.\n\n"
+        "Чтобы поднять лимит:\n"
+        f"• подпишитесь на наш канал — лимит вырастет;\n"
+        f"• или пригласите друзей по своей ссылке — за каждого +{per} распознаваний в день."
+    )
+
+
+def _gate_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    row1: list[InlineKeyboardButton] = []
     url = subscription.channel_url()
     if url:
-        buttons.append(InlineKeyboardButton(text="Открыть канал", url=url))
-    buttons.append(
-        InlineKeyboardButton(text="Я подписался / Проверить", callback_data=_CB_GATE_CHECK)
-    )
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+        row1.append(InlineKeyboardButton(text="Открыть канал", url=url))
+    row1.append(InlineKeyboardButton(text="Пригласить друзей", url=build_share_url(user_id)))
+    row2 = [InlineKeyboardButton(text="Я подписался / Проверить", callback_data=_CB_GATE_CHECK)]
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
 
 
 async def enforce_limit(message: Message, user_id: int, is_private: bool) -> bool:
     subscriber = subscription.is_subscriber_cached(user_id)
-    limit = (
-        config["DAILY_LIMIT_SUBSCRIBED"] if subscriber else config["DAILY_LIMIT_FREE"]
-    )
+    base = config["DAILY_LIMIT_SUBSCRIBED"] if subscriber else config["DAILY_LIMIT_FREE"]
+    try:
+        count = await referrals.cached_referral_count(user_id)
+    except Exception:
+        logger.warning("enforce_limit: cached_referral_count failed for user=%d", user_id, exc_info=True)
+        count = 0
+    limit = limits.effective_daily_limit(base, count)
     used = await limits.usage_today(user_id)
 
     if used >= limit:
         if is_private and subscription.is_gate_enabled() and not subscriber:
-            await message.answer(_MSG_GATE_PROMPT, reply_markup=_gate_keyboard())
+            await message.answer(_gate_prompt_text(), reply_markup=_gate_keyboard(user_id))
         else:
             await message.answer(_MSG_LIMIT_NEUTRAL)
         return False

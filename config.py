@@ -118,6 +118,48 @@ def load_config() -> dict:
                 _DEFAULT_DAILY_LIMIT_SUBSCRIBED,
             )
 
+    _DEFAULT_REFERRAL_BONUS_PER = 3
+    referral_bonus_per = _DEFAULT_REFERRAL_BONUS_PER
+    raw_bonus_per = os.environ.get("REFERRAL_BONUS_PER", "").strip()
+    if raw_bonus_per:
+        try:
+            parsed = int(raw_bonus_per)
+            if parsed <= 0:
+                logger.warning(
+                    "REFERRAL_BONUS_PER содержит неположительное значение %r — используется дефолт %d.",
+                    raw_bonus_per,
+                    _DEFAULT_REFERRAL_BONUS_PER,
+                )
+            else:
+                referral_bonus_per = parsed
+        except ValueError:
+            logger.warning(
+                "REFERRAL_BONUS_PER содержит нечисловое значение %r — используется дефолт %d.",
+                raw_bonus_per,
+                _DEFAULT_REFERRAL_BONUS_PER,
+            )
+
+    _DEFAULT_REFERRAL_BONUS_CAP = 30
+    referral_bonus_cap = _DEFAULT_REFERRAL_BONUS_CAP
+    raw_bonus_cap = os.environ.get("REFERRAL_BONUS_CAP", "").strip()
+    if raw_bonus_cap:
+        try:
+            parsed = int(raw_bonus_cap)
+            if parsed <= 0:
+                logger.warning(
+                    "REFERRAL_BONUS_CAP содержит неположительное значение %r — используется дефолт %d.",
+                    raw_bonus_cap,
+                    _DEFAULT_REFERRAL_BONUS_CAP,
+                )
+            else:
+                referral_bonus_cap = parsed
+        except ValueError:
+            logger.warning(
+                "REFERRAL_BONUS_CAP содержит нечисловое значение %r — используется дефолт %d.",
+                raw_bonus_cap,
+                _DEFAULT_REFERRAL_BONUS_CAP,
+            )
+
     return {
         "BOT_TOKEN": token,
         "ADMIN_USER_ID": admin_user_id,
@@ -128,6 +170,8 @@ def load_config() -> dict:
         "REQUIRED_CHANNEL": required_channel,
         "DAILY_LIMIT_FREE": daily_limit_free,
         "DAILY_LIMIT_SUBSCRIBED": daily_limit_subscribed,
+        "REFERRAL_BONUS_PER": referral_bonus_per,
+        "REFERRAL_BONUS_CAP": referral_bonus_cap,
     }
 
 

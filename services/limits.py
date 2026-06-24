@@ -95,3 +95,10 @@ def _total_today_sync() -> int:
 
 async def total_today() -> int:
     return await asyncio.to_thread(_total_today_sync)
+
+
+def effective_daily_limit(base_limit: int, referral_count: int) -> int:
+    if referral_count <= 0:
+        return base_limit
+    bonus = min(referral_count * config["REFERRAL_BONUS_PER"], config["REFERRAL_BONUS_CAP"])
+    return base_limit + bonus

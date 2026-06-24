@@ -1,11 +1,18 @@
 import asyncio
+import logging
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from config import config
 
+logger = logging.getLogger(__name__)
+
 _BUSY_TIMEOUT_MS = 5000
+
+REFERRAL_COUNT_TTL_SECONDS = 600
+_referral_count_cache: dict[int, tuple[int, float]] = {}
 
 _CREATE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS referrals (
@@ -47,6 +54,7 @@ def _record_referral_sync(referrer_id: int, referred_id: int) -> None:
 
 async def record_referral(referrer_id: int, referred_id: int) -> None:
     await asyncio.to_thread(_record_referral_sync, referrer_id, referred_id)
+    _referral_count_cache.pop(referrer_id, None)
 
 
 def _count_referrals_sync(referrer_id: int) -> int:
@@ -64,6 +72,25 @@ def _count_referrals_sync(referrer_id: int) -> int:
 
 async def count_referrals(referrer_id: int) -> int:
     return await asyncio.to_thread(_count_referrals_sync, referrer_id)
+
+
+async def cached_referral_count(user_id: int) -> int:
+    now = time.monotonic()
+    cached = _referral_count_cache.get(user_id)
+    if cached is not None:
+        count, expiry = cached
+        if now < expiry:
+            return count
+    try:
+        count = await count_referrals(user_id)
+    except Exception:
+        logger.warning(
+            "cached_referral_count: failed to read count for user=%d", user_id, exc_info=True
+        )
+        _referral_count_cache.pop(user_id, None)
+        return 0
+    _referral_count_cache[user_id] = (count, now + REFERRAL_COUNT_TTL_SECONDS)
+    return count
 
 
 def _total_referrals_sync() -> int:

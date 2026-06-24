@@ -7,8 +7,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import config
 from services.bot_identity import get_bot_username
-from services.limits import total_today, usage_today
-from services.referrals import count_referrals, record_referral, top_referrers, total_referrals
+from services.limits import effective_daily_limit, total_today, usage_today
+from services.referrals import cached_referral_count, record_referral, top_referrers, total_referrals
 from services.stats import get_stats
 from services.subscription import cached_subscriber_count, is_subscriber_cached
 
@@ -61,21 +61,34 @@ HELP_TEXT = (
 _SHARE_TEXT = "Попробуй Textify — бесплатный бот для транскрипции голоса и OCR фото!"
 
 
+def _friends_word(n: int) -> str:
+    mod10 = n % 10
+    mod100 = n % 100
+    if mod10 == 1 and mod100 != 11:
+        return "друга"
+    if 2 <= mod10 <= 4 and not (12 <= mod100 <= 14):
+        return "друга"
+    return "друзей"
+
+
 def _build_ref_link(user_id: int) -> str:
     bot_username = get_bot_username()
     return f"https://t.me/{bot_username}?start=ref_{user_id}"
 
 
-def _build_share_keyboard(user_id: int) -> InlineKeyboardMarkup:
+def build_share_url(user_id: int) -> str:
     ref_link = _build_ref_link(user_id)
-    share_url = (
+    return (
         "https://t.me/share/url"
         f"?url={urllib.parse.quote(ref_link, safe='')}"
         f"&text={urllib.parse.quote(_SHARE_TEXT, safe='')}"
     )
+
+
+def _build_share_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Поделиться ботом", url=share_url)]
+            [InlineKeyboardButton(text="Поделиться ботом", url=build_share_url(user_id))]
         ]
     )
 
@@ -123,7 +136,7 @@ async def cmd_start(message: Message, command: CommandObject, is_new_user: bool 
 
     invited_count = 0
     try:
-        invited_count = await count_referrals(user_id)
+        invited_count = await cached_referral_count(user_id)
     except Exception:
         logger.exception(
             "Ошибка чтения счётчика рефералов для user_id=%d", user_id
@@ -132,12 +145,14 @@ async def cmd_start(message: Message, command: CommandObject, is_new_user: bool 
     limit_line = ""
     try:
         subscriber = is_subscriber_cached(user_id)
-        limit_cap = (
-            config["DAILY_LIMIT_SUBSCRIBED"] if subscriber else config["DAILY_LIMIT_FREE"]
-        )
+        base = config["DAILY_LIMIT_SUBSCRIBED"] if subscriber else config["DAILY_LIMIT_FREE"]
+        effective = effective_daily_limit(base, invited_count)
         used = await usage_today(user_id)
-        remaining = max(0, limit_cap - used)
-        limit_line = f"\nСегодня доступно {remaining} из {limit_cap} распознаваний."
+        remaining = max(0, effective - used)
+        bonus = effective - base
+        limit_line = f"\nСегодня доступно {remaining} из {effective} распознаваний."
+        if bonus > 0:
+            limit_line += f"\nЛимит: {base} базовых + {bonus} за {invited_count} {_friends_word(invited_count)}."
     except Exception:
         logger.exception("Ошибка чтения дневного лимита для user_id=%d", user_id)
 
