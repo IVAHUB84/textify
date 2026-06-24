@@ -103,7 +103,7 @@ async def test_start_reply():
     command = MagicMock()
     command.args = None
     from handlers.commands import cmd_start
-    with patch("handlers.commands.count_referrals", return_value=AsyncMock(return_value=0)()):
+    with patch("handlers.commands.cached_referral_count", new=AsyncMock(return_value=0)):
         await cmd_start(message, command, is_new_user=False)
     message.answer.assert_called_once()
     reply = message.answer.call_args[0][0]
@@ -152,3 +152,115 @@ async def test_setup_bot_profile():
     bot.delete_my_commands.assert_awaited_once_with()
     bot.set_my_description.assert_awaited_once_with(BOT_DESCRIPTION)
     bot.set_my_short_description.assert_awaited_once_with(BOT_SHORT_DESCRIPTION)
+
+
+# ---------------------------------------------------------------------------
+# v1.8.0: /start с реферальным бонусом
+# ---------------------------------------------------------------------------
+
+
+def _make_start_message(user_id: int = 1) -> AsyncMock:
+    from unittest.mock import MagicMock
+    message = AsyncMock()
+    message.text = "/start"
+    message.chat = MagicMock()
+    message.chat.type = "private"
+    message.from_user = MagicMock()
+    message.from_user.id = user_id
+    return message
+
+
+def _make_start_command(args=None):
+    from unittest.mock import MagicMock
+    command = MagicMock()
+    command.args = args
+    return command
+
+
+@pytest.mark.asyncio
+async def test_start_shows_effective_limit_with_bonus(monkeypatch):
+    """/start при наличии бонуса показывает эффективный лимит и расшифровку."""
+    from unittest.mock import patch
+    from handlers.commands import cmd_start
+    import handlers.commands as cmd_m
+
+    monkeypatch.setitem(cmd_m.config, "DAILY_LIMIT_FREE", 3)
+    monkeypatch.setitem(cmd_m.config, "DAILY_LIMIT_SUBSCRIBED", 30)
+    monkeypatch.setitem(cmd_m.config, "REFERRAL_BONUS_PER", 3)
+    monkeypatch.setitem(cmd_m.config, "REFERRAL_BONUS_CAP", 30)
+
+    message = _make_start_message(user_id=1001)
+    command = _make_start_command()
+
+    with (
+        patch("handlers.commands.cached_referral_count", new=AsyncMock(return_value=2)),
+        patch("handlers.commands.usage_today", new=AsyncMock(return_value=1)),
+        patch("handlers.commands.is_subscriber_cached", return_value=False),
+        patch("handlers.commands.get_bot_username", return_value="testbot"),
+    ):
+        await cmd_start(message, command, is_new_user=False)
+
+    reply = message.answer.call_args[0][0]
+    assert "из 9" in reply
+    assert "3 базовых" in reply
+    assert "+ 6 за" in reply
+    assert "2 друга" in reply
+
+
+@pytest.mark.asyncio
+async def test_start_no_bonus_no_breakdown(monkeypatch):
+    """/start без рефералов — нет расшифровки, вывод как в v1.7.0."""
+    from unittest.mock import patch
+    from handlers.commands import cmd_start
+    import handlers.commands as cmd_m
+
+    monkeypatch.setitem(cmd_m.config, "DAILY_LIMIT_FREE", 3)
+    monkeypatch.setitem(cmd_m.config, "DAILY_LIMIT_SUBSCRIBED", 30)
+    monkeypatch.setitem(cmd_m.config, "REFERRAL_BONUS_PER", 3)
+    monkeypatch.setitem(cmd_m.config, "REFERRAL_BONUS_CAP", 30)
+
+    message = _make_start_message(user_id=1002)
+    command = _make_start_command()
+
+    with (
+        patch("handlers.commands.cached_referral_count", new=AsyncMock(return_value=0)),
+        patch("handlers.commands.usage_today", new=AsyncMock(return_value=1)),
+        patch("handlers.commands.is_subscriber_cached", return_value=False),
+        patch("handlers.commands.get_bot_username", return_value="testbot"),
+    ):
+        await cmd_start(message, command, is_new_user=False)
+
+    reply = message.answer.call_args[0][0]
+    assert "из 3" in reply
+    assert "базовых" not in reply
+    assert "друзей" not in reply
+
+
+@pytest.mark.asyncio
+async def test_start_subscribed_with_referrals_shows_effective(monkeypatch):
+    """/start подписчика с рефералами — эффективный лимит = subscribed + bonus."""
+    from unittest.mock import patch
+    from handlers.commands import cmd_start
+    import handlers.commands as cmd_m
+
+    monkeypatch.setitem(cmd_m.config, "DAILY_LIMIT_FREE", 3)
+    monkeypatch.setitem(cmd_m.config, "DAILY_LIMIT_SUBSCRIBED", 30)
+    monkeypatch.setitem(cmd_m.config, "REFERRAL_BONUS_PER", 3)
+    monkeypatch.setitem(cmd_m.config, "REFERRAL_BONUS_CAP", 30)
+
+    message = _make_start_message(user_id=1003)
+    command = _make_start_command()
+
+    with (
+        patch("handlers.commands.cached_referral_count", new=AsyncMock(return_value=4)),
+        patch("handlers.commands.usage_today", new=AsyncMock(return_value=5)),
+        patch("handlers.commands.is_subscriber_cached", return_value=True),
+        patch("handlers.commands.get_bot_username", return_value="testbot"),
+    ):
+        await cmd_start(message, command, is_new_user=False)
+
+    reply = message.answer.call_args[0][0]
+    assert "из 42" in reply
+    assert "30 базовых" in reply
+    assert "+ 12 за" in reply
+    assert "4 друга" in reply

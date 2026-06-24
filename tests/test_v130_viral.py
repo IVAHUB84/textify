@@ -18,6 +18,14 @@ def reset_bot_username():
     bi.set_bot_username("")
 
 
+@pytest.fixture(autouse=True)
+def reset_referral_cache():
+    import services.referrals as ref
+    ref._referral_count_cache.clear()
+    yield
+    ref._referral_count_cache.clear()
+
+
 # ---------------------------------------------------------------------------
 # Вспомогательные фабрики и фикстуры
 # ---------------------------------------------------------------------------
@@ -311,7 +319,7 @@ def commands_module(ref_db_path, monkeypatch):
     monkeypatch.setattr(ref_m, "config", {"STATS_DB_PATH": ref_db_path})
     import handlers.commands as cmd_m
     monkeypatch.setattr(cmd_m, "record_referral", ref_m.record_referral)
-    monkeypatch.setattr(cmd_m, "count_referrals", ref_m.count_referrals)
+    monkeypatch.setattr(cmd_m, "cached_referral_count", ref_m.cached_referral_count)
     return cmd_m, ref_m, ref_db_path
 
 
@@ -457,7 +465,7 @@ async def test_start_has_share_button(commands_module):
 
 @pytest.mark.asyncio
 async def test_start_db_error_on_count_does_not_crash(commands_module):
-    """/start при сбое count_referrals деградирует до 0 и не падает."""
+    """/start при сбое cached_referral_count деградирует до 0 и не падает."""
     cmd_m, ref_m, ref_db_path = commands_module
     message = _make_message(chat_type="private", user_id=208)
     command = _make_command(args=None)
@@ -466,7 +474,7 @@ async def test_start_db_error_on_count_does_not_crash(commands_module):
         raise RuntimeError("db down")
 
     with patch("handlers.commands.get_bot_username", return_value="testbot"), \
-         patch("handlers.commands.count_referrals", _fail):
+         patch("handlers.commands.cached_referral_count", _fail):
         await cmd_m.cmd_start(message, command, is_new_user=False)
 
     message.answer.assert_called_once()

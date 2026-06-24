@@ -93,3 +93,43 @@ def test_required_channel_set(monkeypatch):
 def test_required_channel_whitespace_stripped(monkeypatch):
     mod = _reload(monkeypatch, {"REQUIRED_CHANNEL": "  @mychan  "})
     assert mod.config["REQUIRED_CHANNEL"] == "@mychan"
+
+
+def test_referral_bonus_per_default(monkeypatch):
+    mod = _reload(monkeypatch, {})
+    assert mod.config["REFERRAL_BONUS_PER"] == 3
+
+
+def test_referral_bonus_cap_default(monkeypatch):
+    mod = _reload(monkeypatch, {})
+    assert mod.config["REFERRAL_BONUS_CAP"] == 30
+
+
+def test_referral_bonus_per_custom(monkeypatch):
+    mod = _reload(monkeypatch, {"REFERRAL_BONUS_PER": "5"})
+    assert mod.config["REFERRAL_BONUS_PER"] == 5
+
+
+def test_referral_bonus_cap_custom(monkeypatch):
+    mod = _reload(monkeypatch, {"REFERRAL_BONUS_CAP": "60"})
+    assert mod.config["REFERRAL_BONUS_CAP"] == 60
+
+
+def test_referral_bonus_per_invalid_string_uses_default(monkeypatch):
+    mod = _reload(monkeypatch, {"REFERRAL_BONUS_PER": "abc"})
+    assert mod.config["REFERRAL_BONUS_PER"] == 3
+
+
+def test_referral_bonus_cap_invalid_string_uses_default(monkeypatch):
+    mod = _reload(monkeypatch, {"REFERRAL_BONUS_CAP": "xyz"})
+    assert mod.config["REFERRAL_BONUS_CAP"] == 30
+
+
+def test_referral_bonus_per_nonpositive_uses_default(monkeypatch):
+    mod = _reload(monkeypatch, {"REFERRAL_BONUS_PER": "0"})
+    assert mod.config["REFERRAL_BONUS_PER"] == 3
+
+
+def test_referral_bonus_cap_nonpositive_uses_default(monkeypatch):
+    mod = _reload(monkeypatch, {"REFERRAL_BONUS_CAP": "-1"})
+    assert mod.config["REFERRAL_BONUS_CAP"] == 30
