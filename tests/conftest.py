@@ -16,5 +16,6 @@ def auto_pass_enforce_limit(request):
         patch("handlers.gate.enforce_limit", new=AsyncMock(return_value=True)),
         patch("handlers.audio.enforce_limit", new=AsyncMock(return_value=True)),
         patch("handlers.image.enforce_limit", new=AsyncMock(return_value=True)),
+        patch("handlers.video.enforce_limit", new=AsyncMock(return_value=True)),
     ):
         yield
