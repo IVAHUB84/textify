@@ -77,6 +77,7 @@ async def test_enforce_limit_exhausted_private_gate_enabled_shows_gate(monkeypat
         patch("handlers.gate.limits.record_recognition", new=AsyncMock()) as rec,
         patch("handlers.gate.subscription.is_subscriber_cached", return_value=False),
         patch("handlers.gate.subscription.is_gate_enabled", return_value=True),
+        patch("handlers.gate.subscription.check_subscription", new=AsyncMock(return_value=False)),
         patch("handlers.gate.subscription.channel_url", return_value="https://t.me/chan"),
     ):
         msg = _make_message("private")
@@ -89,8 +90,9 @@ async def test_enforce_limit_exhausted_private_gate_enabled_shows_gate(monkeypat
     markup = call_kwargs.kwargs.get("reply_markup") or (call_kwargs.args[1] if len(call_kwargs.args) > 1 else None)
     assert markup is not None
     buttons = [btn for row in markup.inline_keyboard for btn in row]
-    cb_buttons = [b for b in buttons if hasattr(b, "callback_data") and b.callback_data == "gate:chk"]
-    assert cb_buttons, "Кнопка «Проверить» не найдена"
+    # Кнопки «Я подписался / Проверить» больше нет — подписка проверяется автоматически.
+    cb_buttons = [b for b in buttons if getattr(b, "callback_data", None) == "gate:chk"]
+    assert not cb_buttons, "Кнопка «Проверить» должна быть убрана"
 
 
 @pytest.mark.asyncio
@@ -339,6 +341,7 @@ async def test_enforce_limit_gate_message_has_invite_button(monkeypatch):
         patch("handlers.gate.limits.record_recognition", new=AsyncMock()),
         patch("handlers.gate.subscription.is_subscriber_cached", return_value=False),
         patch("handlers.gate.subscription.is_gate_enabled", return_value=True),
+        patch("handlers.gate.subscription.check_subscription", new=AsyncMock(return_value=False)),
         patch("handlers.gate.subscription.channel_url", return_value="https://t.me/chan"),
         patch("handlers.gate.referrals.cached_referral_count", new=AsyncMock(return_value=0)),
         patch("handlers.gate.build_share_url", return_value="https://t.me/share/url?url=x"),
@@ -355,8 +358,8 @@ async def test_enforce_limit_gate_message_has_invite_button(monkeypatch):
     buttons = [btn for row in markup.inline_keyboard for btn in row]
     invite_buttons = [b for b in buttons if "Пригласить" in b.text]
     assert invite_buttons, "Кнопка «Пригласить друзей» не найдена"
-    check_buttons = [b for b in buttons if b.callback_data == "gate:chk"]
-    assert check_buttons, "Кнопка «Проверить» не найдена"
+    check_buttons = [b for b in buttons if getattr(b, "callback_data", None) == "gate:chk"]
+    assert not check_buttons, "Кнопка «Проверить» должна быть убрана"
 
 
 @pytest.mark.asyncio
@@ -374,6 +377,7 @@ async def test_enforce_limit_gate_message_has_two_paths_text(monkeypatch):
         patch("handlers.gate.limits.record_recognition", new=AsyncMock()),
         patch("handlers.gate.subscription.is_subscriber_cached", return_value=False),
         patch("handlers.gate.subscription.is_gate_enabled", return_value=True),
+        patch("handlers.gate.subscription.check_subscription", new=AsyncMock(return_value=False)),
         patch("handlers.gate.subscription.channel_url", return_value="https://t.me/chan"),
         patch("handlers.gate.referrals.cached_referral_count", new=AsyncMock(return_value=0)),
         patch("handlers.gate.build_share_url", return_value="https://t.me/share/url?url=x"),
@@ -454,3 +458,117 @@ async def test_enforce_limit_group_exhausted_shows_neutral_with_refs(monkeypatch
     assert result is False
     call_kwargs = msg.answer.call_args.kwargs
     assert "reply_markup" not in call_kwargs or call_kwargs.get("reply_markup") is None
+
+
+# ---------------------------------------------------------------------------
+# Авто-проверка подписки в enforce_limit (без кнопки «Я подписался»)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enforce_limit_auto_detects_subscriber_no_button(monkeypatch):
+    """При исчерпании free-лимита бот сам зовёт check_subscription; подписчик
+    проходит без кнопки «Проверить» и без gate-сообщения."""
+    from handlers.gate import enforce_limit
+
+    monkeypatch.setitem(_gate_cfg(), "REQUIRED_CHANNEL", "@chan")
+    monkeypatch.setitem(_sub_cfg(), "REQUIRED_CHANNEL", "@chan")
+    monkeypatch.setitem(_gate_cfg(), "DAILY_LIMIT_FREE", 3)
+    monkeypatch.setitem(_gate_cfg(), "DAILY_LIMIT_SUBSCRIBED", 30)
+
+    with (
+        patch("handlers.gate.limits.usage_today", new=AsyncMock(return_value=12)),
+        patch("handlers.gate.limits.record_recognition", new=AsyncMock()) as rec,
+        patch("handlers.gate.subscription.is_subscriber_cached", return_value=False),
+        patch("handlers.gate.subscription.is_gate_enabled", return_value=True),
+        patch("handlers.gate.subscription.check_subscription", new=AsyncMock(return_value=True)) as chk,
+        patch("handlers.gate.referrals.cached_referral_count", new=AsyncMock(return_value=0)),
+    ):
+        msg = _make_message("private")
+        result = await enforce_limit(msg, user_id=60, is_private=True)
+
+    assert result is True
+    chk.assert_awaited_once()
+    rec.assert_awaited_once()
+    msg.answer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enforce_limit_live_check_skipped_within_limit(monkeypatch):
+    """Под лимитом подписка вживую не проверяется — нет лишних getChatMember."""
+    from handlers.gate import enforce_limit
+
+    monkeypatch.setitem(_gate_cfg(), "REQUIRED_CHANNEL", "@chan")
+    monkeypatch.setitem(_sub_cfg(), "REQUIRED_CHANNEL", "@chan")
+
+    with (
+        patch("handlers.gate.limits.usage_today", new=AsyncMock(return_value=0)),
+        patch("handlers.gate.limits.record_recognition", new=AsyncMock()),
+        patch("handlers.gate.subscription.is_subscriber_cached", return_value=False),
+        patch("handlers.gate.subscription.is_gate_enabled", return_value=True),
+        patch("handlers.gate.subscription.check_subscription", new=AsyncMock(return_value=True)) as chk,
+        patch("handlers.gate.referrals.cached_referral_count", new=AsyncMock(return_value=0)),
+    ):
+        msg = _make_message("private")
+        result = await enforce_limit(msg, user_id=61, is_private=True)
+
+    assert result is True
+    chk.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enforce_limit_live_check_false_still_blocks(monkeypatch):
+    """Реально не подписан: live-check=False → блок + gate без кнопки «Проверить»."""
+    from handlers.gate import enforce_limit
+
+    monkeypatch.setitem(_gate_cfg(), "REQUIRED_CHANNEL", "@chan")
+    monkeypatch.setitem(_sub_cfg(), "REQUIRED_CHANNEL", "@chan")
+    monkeypatch.setitem(_gate_cfg(), "DAILY_LIMIT_FREE", 3)
+
+    with (
+        patch("handlers.gate.limits.usage_today", new=AsyncMock(return_value=3)),
+        patch("handlers.gate.limits.record_recognition", new=AsyncMock()) as rec,
+        patch("handlers.gate.subscription.is_subscriber_cached", return_value=False),
+        patch("handlers.gate.subscription.is_gate_enabled", return_value=True),
+        patch("handlers.gate.subscription.check_subscription", new=AsyncMock(return_value=False)) as chk,
+        patch("handlers.gate.subscription.channel_url", return_value="https://t.me/chan"),
+        patch("handlers.gate.referrals.cached_referral_count", new=AsyncMock(return_value=0)),
+        patch("handlers.gate.build_share_url", return_value="https://t.me/share/url?url=x"),
+    ):
+        msg = _make_message("private")
+        result = await enforce_limit(msg, user_id=62, is_private=True)
+
+    assert result is False
+    chk.assert_awaited_once()
+    rec.assert_not_awaited()
+    markup = msg.answer.call_args.kwargs.get("reply_markup")
+    buttons = [btn for row in markup.inline_keyboard for btn in row]
+    assert not [b for b in buttons if getattr(b, "callback_data", None) == "gate:chk"]
+
+
+@pytest.mark.asyncio
+async def test_enforce_limit_live_check_failure_does_not_crash(monkeypatch):
+    """Сбой getChatMember на авто-проверке → не падаем, блокируем как неподписчика."""
+    from handlers.gate import enforce_limit
+
+    monkeypatch.setitem(_gate_cfg(), "REQUIRED_CHANNEL", "@chan")
+    monkeypatch.setitem(_sub_cfg(), "REQUIRED_CHANNEL", "@chan")
+    monkeypatch.setitem(_gate_cfg(), "DAILY_LIMIT_FREE", 3)
+
+    with (
+        patch("handlers.gate.limits.usage_today", new=AsyncMock(return_value=3)),
+        patch("handlers.gate.limits.record_recognition", new=AsyncMock()),
+        patch("handlers.gate.subscription.is_subscriber_cached", return_value=False),
+        patch("handlers.gate.subscription.is_gate_enabled", return_value=True),
+        patch(
+            "handlers.gate.subscription.check_subscription",
+            new=AsyncMock(side_effect=Exception("api down")),
+        ),
+        patch("handlers.gate.subscription.channel_url", return_value="https://t.me/chan"),
+        patch("handlers.gate.referrals.cached_referral_count", new=AsyncMock(return_value=0)),
+        patch("handlers.gate.build_share_url", return_value="https://t.me/share/url?url=x"),
+    ):
+        msg = _make_message("private")
+        result = await enforce_limit(msg, user_id=63, is_private=True)
+
+    assert result is False

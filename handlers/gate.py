@@ -28,7 +28,9 @@ def _gate_prompt_text() -> str:
         "Вы исчерпали дневной лимит распознаваний.\n\n"
         "Чтобы поднять лимит:\n"
         f"• подпишитесь на наш канал — лимит вырастет;\n"
-        f"• или пригласите друзей по своей ссылке — за каждого +{per} распознаваний в день."
+        f"• или пригласите друзей по своей ссылке — за каждого +{per} распознаваний в день.\n\n"
+        "После подписки просто пришлите медиа ещё раз — подписку проверю сам, "
+        "подтверждать ничего не нужно."
     )
 
 
@@ -38,8 +40,7 @@ def _gate_keyboard(user_id: int) -> InlineKeyboardMarkup:
     if url:
         row1.append(InlineKeyboardButton(text="Открыть канал", url=url))
     row1.append(InlineKeyboardButton(text="Пригласить друзей", url=build_share_url(user_id)))
-    row2 = [InlineKeyboardButton(text="Я подписался / Проверить", callback_data=_CB_GATE_CHECK)]
-    return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+    return InlineKeyboardMarkup(inline_keyboard=[row1])
 
 
 async def enforce_limit(message: Message, user_id: int, is_private: bool) -> bool:
@@ -52,6 +53,20 @@ async def enforce_limit(message: Message, user_id: int, is_private: bool) -> boo
         count = 0
     limit = limits.effective_daily_limit(base, count)
     used = await limits.usage_today(user_id)
+
+    # Перед тем как заблокировать, проверяем подписку вживую через getChatMember —
+    # без кнопки «Я подписался»: подписчик автоматически получает повышенный лимит.
+    # Дёргаем API только когда пользователь иначе упёрся бы в лимит (не на каждом сообщении).
+    if used >= limit and not subscriber and is_private and subscription.is_gate_enabled():
+        try:
+            if await subscription.check_subscription(message.bot, user_id):
+                subscriber = True
+                base = config["DAILY_LIMIT_SUBSCRIBED"]
+                limit = limits.effective_daily_limit(base, count)
+        except Exception:
+            logger.warning(
+                "enforce_limit: live subscription check failed for user=%d", user_id, exc_info=True
+            )
 
     if used >= limit:
         if is_private and subscription.is_gate_enabled() and not subscriber:
