@@ -28,7 +28,7 @@ COPY --from=builder /install /usr/local
 
 RUN python -c "import cv2"
 
-COPY config.py bot.py ./
+COPY config.py bot.py version.py announcements.py ./
 COPY handlers/ ./handlers/
 COPY middlewares/ ./middlewares/
 COPY services/ ./services/
