@@ -333,6 +333,46 @@ async def test_translate_returns_none_on_network_error():
     assert result is None
 
 
+def test_translate_target_detection():
+    """Направление перевода берётся из алфавита: кириллица → на английский, латиница → на русский."""
+    import services.llm as llm
+    importlib.reload(llm)
+    assert llm._translate_target("Какие планы на завтра?") == "английский"
+    assert llm._translate_target("What are the plans for tomorrow?") == "русский"
+    assert llm._translate_target("Сколько стоит доставка?") == "английский"
+
+
+@pytest.mark.asyncio
+async def test_translate_russian_input_targets_english():
+    """Русский вход → системный промпт указывает цель «английский»."""
+    mock_post = AsyncMock(return_value=_make_cf_response("ok"))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post) as mp:
+            await llm.translate("Какие у нас планы на завтра? Когда созвон?")
+
+    messages = mp.call_args.kwargs["json"]["messages"]
+    assert "английский" in messages[0]["content"]
+    assert "русский" not in messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_translate_english_input_targets_russian():
+    """Английский вход → системный промпт указывает цель «русский»."""
+    mock_post = AsyncMock(return_value=_make_cf_response("ok"))
+
+    with patch.dict("os.environ", _CF_ENV, clear=False):
+        import services.llm as llm
+        importlib.reload(llm)
+        with patch.object(httpx.AsyncClient, "post", mock_post) as mp:
+            await llm.translate("How much is the delivery and when will it arrive?")
+
+    messages = mp.call_args.kwargs["json"]["messages"]
+    assert "русский" in messages[0]["content"]
+
+
 # ---------------------------------------------------------------------------
 # extract_tasks
 # ---------------------------------------------------------------------------
