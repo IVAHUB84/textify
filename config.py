@@ -160,6 +160,18 @@ def load_config() -> dict:
                 _DEFAULT_REFERRAL_BONUS_CAP,
             )
 
+    announcements_enabled = True
+    raw_announcements = os.environ.get("ANNOUNCEMENTS_ENABLED", "").strip().lower()
+    if raw_announcements in ("true", "1", "yes"):
+        announcements_enabled = True
+    elif raw_announcements in ("false", "0", "no"):
+        announcements_enabled = False
+    elif raw_announcements:
+        logger.warning(
+            "ANNOUNCEMENTS_ENABLED содержит некорректное значение %r — используется дефолт True.",
+            raw_announcements,
+        )
+
     return {
         "BOT_TOKEN": token,
         "ADMIN_USER_ID": admin_user_id,
@@ -172,6 +184,7 @@ def load_config() -> dict:
         "DAILY_LIMIT_SUBSCRIBED": daily_limit_subscribed,
         "REFERRAL_BONUS_PER": referral_bonus_per,
         "REFERRAL_BONUS_CAP": referral_bonus_cap,
+        "ANNOUNCEMENTS_ENABLED": announcements_enabled,
     }
 
 

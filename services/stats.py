@@ -50,9 +50,72 @@ def init_db() -> None:
         con.execute("PRAGMA journal_mode=WAL")
         con.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         con.executescript(_CREATE_TABLE_SQL)
+        existing_columns = {
+            row[1]
+            for row in con.execute("PRAGMA table_info(user_stats)").fetchall()
+        }
+        if "announcements_optout" not in existing_columns:
+            con.execute(
+                "ALTER TABLE user_stats ADD COLUMN announcements_optout INTEGER NOT NULL DEFAULT 0"
+            )
         con.commit()
     finally:
         con.close()
+
+
+def _all_active_recipient_ids_sync() -> list[int]:
+    db_path = config["STATS_DB_PATH"]
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+        rows = con.execute(
+            "SELECT user_id FROM user_stats WHERE announcements_optout = 0"
+        ).fetchall()
+        return [row[0] for row in rows]
+    finally:
+        con.close()
+
+
+async def all_active_recipient_ids() -> list[int]:
+    return await asyncio.to_thread(_all_active_recipient_ids_sync)
+
+
+def _set_announcements_optout_sync(user_id: int, optout: bool) -> None:
+    db_path = config["STATS_DB_PATH"]
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+        con.execute(
+            "UPDATE user_stats SET announcements_optout = ? WHERE user_id = ?",
+            (1 if optout else 0, user_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+async def set_announcements_optout(user_id: int, optout: bool) -> None:
+    await asyncio.to_thread(_set_announcements_optout_sync, user_id, optout)
+
+
+def _is_announcements_optout_sync(user_id: int) -> bool:
+    db_path = config["STATS_DB_PATH"]
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+        row = con.execute(
+            "SELECT announcements_optout FROM user_stats WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        return bool(row[0])
+    finally:
+        con.close()
+
+
+async def is_announcements_optout(user_id: int) -> bool:
+    return await asyncio.to_thread(_is_announcements_optout_sync, user_id)
 
 
 def _record_message_sync(user_id: int, msg_type: str) -> bool:

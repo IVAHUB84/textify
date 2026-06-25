@@ -7,6 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import config
 from services.bot_identity import get_bot_username
+from version import __version__
 from services.limits import effective_daily_limit, total_today, usage_today
 from services.referrals import cached_referral_count, record_referral, top_referrers, total_referrals
 from services.stats import get_stats
@@ -216,6 +217,7 @@ async def cmd_stats(message: Message) -> None:
 
     text = (
         "Статистика Textify\n\n"
+        f"Версия: {__version__}\n\n"
         f"Уникальных пользователей: {stats['unique_users']}\n"
         f"Всего сообщений: {stats['total_messages']}\n\n"
         "Разбивка по типам:\n"
