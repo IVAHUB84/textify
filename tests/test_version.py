@@ -3,7 +3,7 @@ from version import __version__, parse_version
 
 
 def test_version_constant():
-    assert __version__ == "1.11.0"
+    assert __version__ == "1.11.1"
 
 
 def test_parse_version_valid():
