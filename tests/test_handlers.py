@@ -233,7 +233,7 @@ async def test_start_no_bonus_no_breakdown(monkeypatch):
     reply = message.answer.call_args[0][0]
     assert "из 3" in reply
     assert "базовых" not in reply
-    assert "друзей" not in reply
+    assert "Лимит:" not in reply
 
 
 @pytest.mark.asyncio
