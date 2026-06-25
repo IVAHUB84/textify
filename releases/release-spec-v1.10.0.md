@@ -259,19 +259,19 @@
   TABLE ADD COLUMN ... DEFAULT 0` через проверку `PRAGMA table_info`; тест миграции на старой схеме.
 
 ## Чек-лист готовности к релизу
-- [ ] Все задачи реализованы
-- [ ] Соответствие ADR проверено (единый `__version__` в `version.py` + semver-сравнение; реестр
+- [x] Все задачи реализованы
+- [x] Соответствие ADR проверено (единый `__version__` в `version.py` + semver-сравнение; реестр
       `announcements.py` отдельно от release-notes; состояние в `stats.db` — `announce_state` +
       колонка `announcements_optout`; gate админа перед рассылкой; пометка версии **до** цикла отправки;
       фоновая троттлящаяся рассылка с backoff и пропуском `TelegramForbiddenError`; отчёт админу;
       отписка кнопкой + `/announces_on`/`/announces_off`; флаг `ANNOUNCEMENTS_ENABLED` дефолт true;
       медиа/лимиты/gate/рефералы не затронуты)
-- [ ] Code review пройден
-- [ ] Тесты добавлены и проходят (см. раздел «Тесты»)
-- [ ] Обновлена документация (README — анонсы новых версий и отписка; roadmap v1.10.0, если ведётся)
-- [ ] Обновлён roadmap (v1.10.0, если применимо)
-- [ ] `__version__` синхронизирован с git-тегом `v1.10.0` (шаг мейнтейнера)
-- [ ] Артефакты поставки соответствуют `deploy-guide.md`: `Dockerfile`/`deploy/docker-compose.yml`/
+- [x] Code review пройден
+- [x] Тесты добавлены и проходят (613 passed, 3 skipped, 0 failed)
+- [x] Обновлена документация (README — анонсы новых версий и отписка; roadmap v1.10.0, если ведётся)
+- [x] Обновлён roadmap (v1.10.0 — выпущен 2026-06-25)
+- [x] `__version__` синхронизирован с git-тегом `v1.10.0` (version.py: `__version__ = "1.10.0"`)
+- [x] Артефакты поставки соответствуют `deploy-guide.md`: `Dockerfile`/`deploy/docker-compose.yml`/
       `.github/workflows/deploy.yml` — **без изменений**; `.env.example` и `deploy/.env.example` +=
       плейсхолдер `ANNOUNCEMENTS_ENABLED`; миграция БД аддитивная в коде, новых деплой-предусловий нет
 </content>
