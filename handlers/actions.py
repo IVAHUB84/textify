@@ -28,6 +28,7 @@ _CB_TASKS = "act:task"
 _CB_TIMESTAMPS = "act:ts"
 _CB_SRT = "act:srt"
 _CB_PDF = "act:pdf"
+_CB_PDF_BW = "act:pdfbw"
 
 _LLMAction = Callable[[str], Awaitable["str | None | _BudgetExceededType"]]
 
@@ -64,7 +65,12 @@ def actions_keyboard(
             ]
         )
     if with_pdf:
-        rows.append([InlineKeyboardButton(text="📄 PDF", callback_data=_CB_PDF)])
+        rows.append(
+            [
+                InlineKeyboardButton(text="📄 PDF", callback_data=_CB_PDF),
+                InlineKeyboardButton(text="📄 Скан (ч/б)", callback_data=_CB_PDF_BW),
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -102,6 +108,35 @@ async def _run_llm_action(callback: CallbackQuery, action: _LLMAction) -> None:
 
     assert isinstance(result, str)
     await send_result(raw_msg, result)
+
+
+async def _handle_pdf(callback: CallbackQuery, mode: str) -> None:
+    await callback.answer("Готовлю…")
+
+    raw_msg = _cached_message(callback)
+    if raw_msg is None:
+        await callback.answer("Изображение недоступно", show_alert=True)
+        return
+
+    image_bytes = result_cache.get_image(raw_msg.chat.id, raw_msg.message_id)
+    if not image_bytes:
+        await callback.answer("Изображение недоступно (устарело)", show_alert=True)
+        return
+
+    bot: Bot = callback.bot  # type: ignore[assignment]
+    async with ChatActionSender(
+        bot=bot, chat_id=raw_msg.chat.id, action=ChatAction.UPLOAD_DOCUMENT
+    ):
+        pdf = await recognize_pdf(image_bytes, mode)
+
+    if not pdf:
+        await raw_msg.answer("Не удалось сформировать PDF. Попробуйте позже.")
+        return
+
+    await raw_msg.answer_document(
+        BufferedInputFile(pdf, filename="document.pdf"),
+        caption="PDF с текстовым слоем (текст можно выделять и искать).",
+    )
 
 
 @actions_router.callback_query(F.data == _CB_FULL)
@@ -184,29 +219,9 @@ async def handle_srt(callback: CallbackQuery) -> None:
 
 @actions_router.callback_query(F.data == _CB_PDF)
 async def handle_pdf(callback: CallbackQuery) -> None:
-    await callback.answer("Готовлю…")
+    await _handle_pdf(callback, "doc")
 
-    raw_msg = _cached_message(callback)
-    if raw_msg is None:
-        await callback.answer("Изображение недоступно", show_alert=True)
-        return
 
-    image_bytes = result_cache.get_image(raw_msg.chat.id, raw_msg.message_id)
-    if not image_bytes:
-        await callback.answer("Изображение недоступно (устарело)", show_alert=True)
-        return
-
-    bot: Bot = callback.bot  # type: ignore[assignment]
-    async with ChatActionSender(
-        bot=bot, chat_id=raw_msg.chat.id, action=ChatAction.UPLOAD_DOCUMENT
-    ):
-        pdf = await recognize_pdf(image_bytes)
-
-    if not pdf:
-        await raw_msg.answer("Не удалось сформировать PDF. Попробуйте позже.")
-        return
-
-    await raw_msg.answer_document(
-        BufferedInputFile(pdf, filename="document.pdf"),
-        caption="PDF с текстовым слоем (текст можно выделять и искать).",
-    )
+@actions_router.callback_query(F.data == _CB_PDF_BW)
+async def handle_pdf_bw(callback: CallbackQuery) -> None:
+    await _handle_pdf(callback, "scan")

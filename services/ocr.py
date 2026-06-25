@@ -6,13 +6,15 @@ import pytesseract
 from PIL import Image
 
 from services import HEAVY_LOCAL_SEMAPHORE
-from services.preprocess import preprocess_image
+from services.preprocess import preprocess_image, render_page
 
 logger = logging.getLogger(__name__)
 
 
 _LANG = "rus+eng"
 _CONFIG = "--oem 1 --psm 3"
+_PAGE_JPEG_QUALITY = 75
+_PAGE_DPI = (200, 200)
 
 # Гейт качества OCR. Иконки/UI-элементы (сердечки, значок Wi-Fi, батарея) — это не текст,
 # но Tesseract всё равно пытается их «прочитать» и выдаёт мусорные наборы символов.
@@ -89,19 +91,40 @@ async def recognize_text(image_bytes: bytes) -> str:
     return result
 
 
-def _run_ocr_pdf(image_bytes: bytes) -> bytes | None:
-    """Searchable PDF: исходное изображение + невидимый текстовый слой от Tesseract."""
+def _run_ocr_pdf(image_bytes: bytes, mode: str = "doc") -> bytes | None:
+    """Searchable PDF: очищенная страница + невидимый текстовый слой от Tesseract.
+
+    При сбое рендера деградирует к оригинальному изображению (поведение v1.6.0).
+    Если и fallback падает — возвращает None.
+    """
     try:
-        image = Image.open(BytesIO(image_bytes))
+        page = render_page(image_bytes, mode)
+        buf = BytesIO()
+        # convert("L") — страховка на случай будущего цветного doc-режима; сейчас render_page всегда "L"
+        page.convert("L").save(buf, format="JPEG", quality=_PAGE_JPEG_QUALITY, dpi=_PAGE_DPI)
+        buf.seek(0)
+        jpeg_page = Image.open(buf)
+        jpeg_page.load()
         pdf = pytesseract.image_to_pdf_or_hocr(
-            image, lang=_LANG, config=_CONFIG, extension="pdf"
+            jpeg_page, lang=_LANG, config=_CONFIG, extension="pdf"
+        )
+        if not pdf:
+            raise ValueError("empty PDF from Tesseract")
+        return bytes(pdf)
+    except Exception:
+        logger.warning("PDF render failed, falling back to original image", exc_info=True)
+
+    try:
+        original = Image.open(BytesIO(image_bytes))
+        pdf = pytesseract.image_to_pdf_or_hocr(
+            original, lang=_LANG, config=_CONFIG, extension="pdf"
         )
         return bytes(pdf) if pdf else None
     except Exception:
-        logger.exception("OCR->PDF failed")
+        logger.exception("PDF fallback on original image also failed")
         return None
 
 
-async def recognize_pdf(image_bytes: bytes) -> bytes | None:
+async def recognize_pdf(image_bytes: bytes, mode: str = "doc") -> bytes | None:
     async with HEAVY_LOCAL_SEMAPHORE:
-        return await asyncio.to_thread(_run_ocr_pdf, image_bytes)
+        return await asyncio.to_thread(_run_ocr_pdf, image_bytes, mode)
