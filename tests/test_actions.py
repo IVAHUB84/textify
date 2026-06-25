@@ -547,7 +547,7 @@ async def test_handle_pdf_cache_hit_sends_document():
     with patch("handlers.actions.recognize_pdf", new=AsyncMock(return_value=b"%PDF-1.4 ...")) as mock_pdf:
         await handle_pdf(callback)
 
-    mock_pdf.assert_awaited_once_with(b"img-bytes")
+    mock_pdf.assert_awaited_once_with(b"img-bytes", "doc")
     callback.message.answer_document.assert_awaited_once()
     doc = callback.message.answer_document.await_args[0][0]
     assert doc.filename.endswith(".pdf")
@@ -581,6 +581,112 @@ async def test_handle_pdf_recognize_returns_none_sends_service_message():
 
     with patch("handlers.actions.recognize_pdf", new=AsyncMock(return_value=None)):
         await handle_pdf(callback)
+
+    callback.message.answer_document.assert_not_awaited()
+    callback.message.answer.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Тесты v1.9.0 — две кнопки PDF, handle_pdf_bw, _handle_pdf
+# ---------------------------------------------------------------------------
+
+
+def test_actions_keyboard_pdf_has_two_buttons():
+    """with_pdf=True → в ряду PDF две кнопки: act:pdf и act:pdfbw."""
+    kb = actions_keyboard(with_pdf=True)
+    all_data = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert "act:pdf" in all_data
+    assert "act:pdfbw" in all_data
+
+
+def test_actions_keyboard_pdf_row_contains_both():
+    """Кнопки act:pdf и act:pdfbw находятся в одном ряду."""
+    kb = actions_keyboard(with_pdf=True)
+    pdf_row = None
+    for row in kb.inline_keyboard:
+        row_data = {btn.callback_data for btn in row}
+        if "act:pdf" in row_data or "act:pdfbw" in row_data:
+            pdf_row = row_data
+            break
+    assert pdf_row is not None
+    assert "act:pdf" in pdf_row
+    assert "act:pdfbw" in pdf_row
+
+
+def test_actions_keyboard_pdfbw_callback_within_64_bytes():
+    """act:pdfbw укладывается в 64 байта."""
+    assert len("act:pdfbw".encode("utf-8")) <= 64
+
+
+def test_actions_keyboard_no_pdf_no_pdfbw_by_default():
+    """Без with_pdf кнопок act:pdf и act:pdfbw нет."""
+    for progressive in (True, False):
+        data = {btn.callback_data for row in actions_keyboard(progressive).inline_keyboard for btn in row}
+        assert "act:pdf" not in data
+        assert "act:pdfbw" not in data
+
+
+@pytest.mark.asyncio
+async def test_handle_pdf_calls_recognize_pdf_doc_mode():
+    """handle_pdf (act:pdf) вызывает recognize_pdf с mode='doc'."""
+    from handlers.actions import handle_pdf
+
+    callback = _make_callback(message_id=830)
+    callback.message.answer_document = AsyncMock()
+    cache_mod.put_image(12345, 830, b"img-bytes")
+
+    with patch("handlers.actions.recognize_pdf", new=AsyncMock(return_value=b"%PDF-1.4")) as mock_pdf:
+        await handle_pdf(callback)
+
+    mock_pdf.assert_awaited_once_with(b"img-bytes", "doc")
+
+
+@pytest.mark.asyncio
+async def test_handle_pdf_bw_cache_hit_sends_document():
+    """handle_pdf_bw (act:pdfbw) при cache-hit вызывает recognize_pdf с mode='scan' и шлёт документ."""
+    from handlers.actions import handle_pdf_bw
+
+    callback = _make_callback(message_id=840)
+    callback.message.answer_document = AsyncMock()
+    cache_mod.put_image(12345, 840, b"img-bytes")
+
+    with patch("handlers.actions.recognize_pdf", new=AsyncMock(return_value=b"%PDF-1.4 bw")) as mock_pdf:
+        await handle_pdf_bw(callback)
+
+    mock_pdf.assert_awaited_once_with(b"img-bytes", "scan")
+    callback.message.answer_document.assert_awaited_once()
+    doc = callback.message.answer_document.await_args[0][0]
+    assert doc.filename.endswith(".pdf")
+
+
+@pytest.mark.asyncio
+async def test_handle_pdf_bw_cache_miss_alert():
+    """handle_pdf_bw при отсутствии картинки → alert, recognize_pdf не вызывается."""
+    from handlers.actions import handle_pdf_bw
+
+    callback = _make_callback(message_id=841)
+    callback.message.answer_document = AsyncMock()
+
+    with patch("handlers.actions.recognize_pdf", new=AsyncMock()) as mock_pdf:
+        await handle_pdf_bw(callback)
+
+    mock_pdf.assert_not_awaited()
+    callback.message.answer_document.assert_not_awaited()
+    alert_calls = [c for c in callback.answer.await_args_list if c[1].get("show_alert") is True]
+    assert len(alert_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_handle_pdf_bw_recognize_returns_none_sends_service_message():
+    """handle_pdf_bw при сбое recognize_pdf (None) → текстовое сообщение, без документа."""
+    from handlers.actions import handle_pdf_bw
+
+    callback = _make_callback(message_id=842)
+    callback.message.answer_document = AsyncMock()
+    cache_mod.put_image(12345, 842, b"img")
+
+    with patch("handlers.actions.recognize_pdf", new=AsyncMock(return_value=None)):
+        await handle_pdf_bw(callback)
 
     callback.message.answer_document.assert_not_awaited()
     callback.message.answer.assert_awaited_once()

@@ -190,3 +190,126 @@ class TestDeskew:
         result = preprocess_image(image_bytes)
         assert isinstance(result, np.ndarray)
         assert _max_side(result) <= 2500
+
+
+# ---------------------------------------------------------------------------
+# render_page — новые тесты v1.9.0
+# ---------------------------------------------------------------------------
+
+
+class TestRenderPageDoc:
+    def test_returns_pil_image(self):
+        from services.preprocess import render_page
+        result = render_page(_make_color_image(), "doc")
+        assert isinstance(result, Image.Image)
+
+    def test_not_binarized(self):
+        """Режим 'doc' не бинаризует — уникальных значений пикселей больше двух."""
+        from services.preprocess import render_page
+        result = render_page(_make_color_image(), "doc")
+        arr = np.array(result)
+        unique = np.unique(arr)
+        assert len(unique) > 2, f"'doc' should not binarize; got unique values: {unique}"
+
+    def test_default_mode_is_doc(self):
+        """render_page без mode — тот же результат, что с mode='doc' (не бинаризованный)."""
+        from services.preprocess import render_page
+        result = render_page(_make_color_image())
+        arr = np.array(result)
+        unique = np.unique(arr)
+        assert len(unique) > 2
+
+    def test_size_bounded_by_page_max_side(self):
+        from services.preprocess import render_page, _PAGE_MAX_SIDE
+        result = render_page(_make_large_image(size=(3000, 2000)), "doc")
+        arr = np.array(result)
+        assert max(arr.shape[:2]) <= _PAGE_MAX_SIDE
+
+
+class TestRenderPageScan:
+    def test_returns_pil_image(self):
+        from services.preprocess import render_page
+        result = render_page(_make_color_image(), "scan")
+        assert isinstance(result, Image.Image)
+
+    def test_binarized(self):
+        """Режим 'scan' бинаризует — не более двух уникальных значений пикселей."""
+        from services.preprocess import render_page
+        result = render_page(_make_color_image(), "scan")
+        arr = np.array(result)
+        unique = set(np.unique(arr).tolist())
+        assert unique.issubset({0, 255}), f"'scan' should binarize; got: {unique}"
+
+    def test_size_bounded_by_page_max_side(self):
+        from services.preprocess import render_page, _PAGE_MAX_SIDE
+        result = render_page(_make_large_image(size=(3000, 2000)), "scan")
+        arr = np.array(result)
+        assert max(arr.shape[:2]) <= _PAGE_MAX_SIDE
+
+
+class TestDeskewThreshold:
+    def test_render_page_skips_rotation_below_threshold(self):
+        """render_page не вращает страницу при угле < _MIN_DESKEW_ANGLE (порог работает в render-ветке)."""
+        from unittest.mock import patch
+        from services.preprocess import render_page, _MIN_DESKEW_ANGLE
+
+        image_bytes = _make_color_image()
+        tiny_angle = _MIN_DESKEW_ANGLE * 0.4
+
+        with patch("services.preprocess._skew_angle", return_value=tiny_angle) as mock_angle, \
+             patch("services.preprocess._rotate") as mock_rotate:
+            render_page(image_bytes, "doc")
+
+        mock_angle.assert_called()
+        mock_rotate.assert_not_called()
+
+    def test_preprocess_image_rotates_below_threshold(self):
+        """preprocess_image вращает даже при малом угле (< _MIN_DESKEW_ANGLE) — порог здесь не применяется."""
+        from unittest.mock import patch
+        from services.preprocess import preprocess_image, _MIN_DESKEW_ANGLE
+
+        image_bytes = _make_color_image()
+        tiny_angle = _MIN_DESKEW_ANGLE * 0.4
+
+        with patch("services.preprocess._skew_angle", return_value=tiny_angle), \
+             patch("services.preprocess._rotate") as mock_rotate:
+            preprocess_image(image_bytes)
+
+        mock_rotate.assert_called_once()
+
+    def test_min_deskew_angle_constant(self):
+        from services.preprocess import _MIN_DESKEW_ANGLE
+        assert 0.0 < _MIN_DESKEW_ANGLE <= 1.0
+
+    def test_page_max_side_constant(self):
+        from services.preprocess import _PAGE_MAX_SIDE
+        assert _PAGE_MAX_SIDE == 2000
+
+
+class TestPreprocessImageContractUnchanged:
+    """Контракт preprocess_image — тип и форма массива не сломались."""
+
+    def test_returns_ndarray(self):
+        from services.preprocess import preprocess_image
+        result = preprocess_image(_make_color_image())
+        assert isinstance(result, np.ndarray)
+
+    def test_returns_2d_array(self):
+        from services.preprocess import preprocess_image
+        result = preprocess_image(_make_color_image())
+        assert result.ndim == 2
+
+    def test_dtype_uint8(self):
+        from services.preprocess import preprocess_image
+        result = preprocess_image(_make_color_image())
+        assert result.dtype == np.uint8
+
+    def test_values_predominantly_binary(self):
+        """preprocess_image возвращает практически бинарный массив; большинство пикселей 0 или 255."""
+        from services.preprocess import preprocess_image
+        result = preprocess_image(_make_color_image())
+        binary_count = int(np.sum((result == 0) | (result == 255)))
+        total = result.size
+        assert binary_count / total >= 0.95, (
+            f"Expected ≥95% binary pixels, got {binary_count}/{total}"
+        )

@@ -291,8 +291,9 @@ async def test_image_progressive_sends_preview_with_two_buttons():
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
     data_values = {btn.callback_data for btn in buttons}
-    assert len(buttons) == 5
+    assert len(buttons) == 6
     assert "act:pdf" in data_values
+    assert "act:pdfbw" in data_values
     # Байты картинки закэшированы под отправленным сообщением — для кнопки PDF.
     sent_id = message.answer.return_value.message_id
     assert cache_mod.get_image(_CHAT_ID, sent_id) == b"fake"
@@ -432,6 +433,7 @@ async def test_image_non_progressive_sends_one_button():
     kwargs = message.answer.await_args[1]
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
     buttons = [btn for row in kwargs["reply_markup"].inline_keyboard for btn in row]
-    assert len(buttons) == 4
+    assert len(buttons) == 5
     assert buttons[0].callback_data == "act:sum"
     assert "act:pdf" in {btn.callback_data for btn in buttons}
+    assert "act:pdfbw" in {btn.callback_data for btn in buttons}
