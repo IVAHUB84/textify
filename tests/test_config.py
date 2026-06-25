@@ -133,3 +133,32 @@ def test_referral_bonus_per_nonpositive_uses_default(monkeypatch):
 def test_referral_bonus_cap_nonpositive_uses_default(monkeypatch):
     mod = _reload(monkeypatch, {"REFERRAL_BONUS_CAP": "-1"})
     assert mod.config["REFERRAL_BONUS_CAP"] == 30
+
+
+def test_announcements_enabled_default(monkeypatch):
+    mod = _reload(monkeypatch, {})
+    assert mod.config["ANNOUNCEMENTS_ENABLED"] is True
+
+
+def test_announcements_enabled_true_values(monkeypatch):
+    for val in ("true", "1", "yes"):
+        mod = _reload(monkeypatch, {"ANNOUNCEMENTS_ENABLED": val})
+        assert mod.config["ANNOUNCEMENTS_ENABLED"] is True, f"Expected True for {val!r}"
+
+
+def test_announcements_enabled_false_values(monkeypatch):
+    for val in ("false", "0", "no"):
+        mod = _reload(monkeypatch, {"ANNOUNCEMENTS_ENABLED": val})
+        assert mod.config["ANNOUNCEMENTS_ENABLED"] is False, f"Expected False for {val!r}"
+
+
+def test_announcements_enabled_invalid_uses_default(monkeypatch):
+    mod = _reload(monkeypatch, {"ANNOUNCEMENTS_ENABLED": "maybe"})
+    assert mod.config["ANNOUNCEMENTS_ENABLED"] is True
+
+
+def test_announcements_enabled_invalid_logs_warning(monkeypatch, caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        _reload(monkeypatch, {"ANNOUNCEMENTS_ENABLED": "oops"})
+    assert any("ANNOUNCEMENTS_ENABLED" in r.message for r in caplog.records)
