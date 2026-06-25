@@ -16,6 +16,7 @@ from handlers import (
     image_router,
     setup_bot_profile,
     text_router,
+    video_router,
 )
 from handlers.announce import build_admin_preview_keyboard
 from handlers.gate import gate_router
@@ -96,6 +97,7 @@ async def main() -> None:
     dp.include_router(group_router)
     dp.include_router(image_router)
     dp.include_router(audio_router)
+    dp.include_router(video_router)
     dp.include_router(text_router)
 
     try:

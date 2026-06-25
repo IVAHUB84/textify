@@ -6,6 +6,7 @@ from handlers.commands import setup_bot_profile
 from handlers.group import group_router
 from handlers.image import router as image_router
 from handlers.text import router as text_router
+from handlers.video import router as video_router
 
 __all__ = [
     "actions_router",
@@ -16,4 +17,5 @@ __all__ = [
     "image_router",
     "setup_bot_profile",
     "text_router",
+    "video_router",
 ]
